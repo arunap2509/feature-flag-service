@@ -2,11 +2,13 @@ package constants
 
 // HTTP Headers
 const (
-	HeaderIfMatch     = "If-Match"
-	HeaderETag        = "ETag"
-	HeaderUser        = "X-User"
-	HeaderContentType = "Content-Type"
-	ContentTypeJSON   = "application/json"
+	HeaderIfMatch       = "If-Match"
+	HeaderETag          = "ETag"
+	HeaderUser          = "X-User"
+	HeaderContentType   = "Content-Type"
+	HeaderXForwardedFor = "X-Forwarded-For"
+	ContentTypeJSON     = "application/json"
+	HealthzPath         = "/healthz"
 )
 
 // Flag States
@@ -51,11 +53,13 @@ const (
 
 // Service Metadata
 const (
-	ServiceNameMgmtAPI    = "management-api"
-	ServiceNameOutboxPub  = "outbox-cdc-publisher"
-	ServiceNameEvaluator  = "evaluator"
-	ServiceNameConnServer = "conn-server"
-	StatusHealthy         = "ok"
+	ServiceNameMgmtAPI      = "management-api"
+	ServiceNameOutboxPub    = "outbox-cdc-publisher"
+	ServiceNameEvaluator    = "evaluator"
+	ServiceNameConnServer   = "conn-server"
+	ServiceNameLoadBalancer = "load-balancer"
+	StatusHealthy           = "ok"
+	StatusDegraded          = "degraded"
 )
 
 // Transactional Outbox & Logical Replication (CDC)
@@ -96,6 +100,7 @@ const (
 	EtcdPrefixConnServers = "/members/conn-servers/"
 	DefaultEtcdLeaseTTL   = 3
 	DefaultConnServerPort = "8091"
+	DefaultLoadBalancerPort = "8080"
 	DefaultDeliveriesPartitions = 8
 	DefaultKeepaliveIntervalSec = 15
 )
@@ -134,4 +139,6 @@ const (
 	ErrMsgInvalidRolloutPct       = "rollout_percentage must be between 0 and 100"
 	ErrMsgInvalidRuleOrder        = "rule order must be greater than 0"
 	ErrMsgInvalidRuleDefinition   = "rule must specify either a segment or a rollout percentage"
+	ErrMsgNoUpstreamsAvailable    = "no healthy connection servers available"
+	ErrMsgUpstreamConnectionError = "upstream connection error"
 )

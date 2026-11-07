@@ -293,5 +293,24 @@ services:
       evaluator-3:
         condition: service_started
 
+  load-balancer:
+    build:
+      context: .
+      dockerfile: Dockerfile.lb
+    container_name: ff-load-balancer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      ETCD_ENDPOINTS: "etcd:2379"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      conn-server:
+        condition: service_started
+      conn-server-2:
+        condition: service_started
+
 volumes:
   postgres_data:
