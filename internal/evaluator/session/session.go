@@ -81,7 +81,28 @@ func (r *Registry) SessionCount() int {
 	return total
 }
 
-// ReevaluateShard computes diff patches for all active sessions in a shard when a flag changes
+// ActiveShards returns all shard IDs for an environment that currently have active client sessions
+func (r *Registry) ActiveShards(envID string) []int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	shards, ok := r.sessions[envID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]int, 0, len(shards))
+	for shardID, conns := range shards {
+		if len(conns) > 0 {
+			result = append(result, shardID)
+		}
+	}
+	return result
+}
+
+// ReevaluateShard computes diff patches for all active sessions in a shard when a flag or segment changes.
+// If flagKey is non-empty, only that specific flag is evaluated.
+// If flagKey is empty (e.g. on segment updates), all active flags in the environment are evaluated.
 func (r *Registry) ReevaluateShard(
 	envID string,
 	shardID int,
@@ -94,18 +115,28 @@ func (r *Registry) ReevaluateShard(
 	defer r.mu.Unlock()
 
 	patches := make([]DiffPatch, 0)
-	targetFlag, flagExists := flags[flagKey]
-	if !flagExists {
-		return patches
-	}
-
 	shards, ok := r.sessions[envID]
 	if !ok {
 		return patches
 	}
 	conns, ok := shards[shardID]
-	if !ok {
+	if !ok || len(conns) == 0 {
 		return patches
+	}
+
+	var evalFlags []*engine.ParsedFlag
+	if flagKey != "" {
+		if targetFlag, flagExists := flags[flagKey]; flagExists {
+			evalFlags = []*engine.ParsedFlag{targetFlag}
+		} else {
+			return patches
+		}
+	} else {
+		// Environment/Segment update: evaluate all flags
+		evalFlags = make([]*engine.ParsedFlag, 0, len(flags))
+		for _, f := range flags {
+			evalFlags = append(evalFlags, f)
+		}
 	}
 
 	for _, sess := range conns {
@@ -114,23 +145,28 @@ func (r *Registry) ReevaluateShard(
 			Attributes: sess.Attributes,
 		}
 
-		newVal := engine.EvaluateFlag(targetFlag, segments, userCtx)
-		oldVal, hadOldVal := sess.LastAnswers[flagKey]
+		changes := make(map[string]bool)
+		for _, f := range evalFlags {
+			newVal := engine.EvaluateFlag(f, segments, userCtx)
+			oldVal, hadOldVal := sess.LastAnswers[f.Key]
 
-		// If value flipped or was not previously evaluated, produce a diff patch!
-		if !hadOldVal || oldVal != newVal {
-			if sess.LastAnswers == nil {
-				sess.LastAnswers = make(map[string]bool)
+			// If value flipped or was not previously evaluated, produce a diff patch!
+			if !hadOldVal || oldVal != newVal {
+				if sess.LastAnswers == nil {
+					sess.LastAnswers = make(map[string]bool)
+				}
+				sess.LastAnswers[f.Key] = newVal
+				changes[f.Key] = newVal
 			}
-			sess.LastAnswers[flagKey] = newVal
+		}
+
+		if len(changes) > 0 {
 			patch := DiffPatch{
 				ConnectionID: sess.ConnectionID,
 				ServerSlot:   sess.ServerSlot,
 				EnvID:        envID,
 				EnvVersion:   envVersion,
-				Changes: map[string]bool{
-					flagKey: newVal,
-				},
+				Changes:      changes,
 			}
 			patches = append(patches, patch)
 			if sess.PatchChan != nil {

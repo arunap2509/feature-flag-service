@@ -49,53 +49,103 @@ func NewCoordinator(endpoints []string, nodeID string, hashRing *ring.Ring, leas
 	}, nil
 }
 
-// Start registers the node with etcd and starts the keep-alive and watch loops
+// Start registers the node with etcd and starts resilient lease maintenance and watch loops
 func (c *Coordinator) Start(ctx context.Context) error {
-	// 1. Grant Lease
+	// 1. Initial registration before declaring node ready
+	if err := c.registerOnce(ctx); err != nil {
+		return fmt.Errorf("initial etcd registration failed: %w", err)
+	}
+
+	// 2. Start resilient background lease maintainer (auto-reconnects on lease drop)
+	go c.maintainLease(ctx)
+
+	// 3. Start resilient watch loop for evaluator membership changes
+	go c.watchMembers(ctx)
+
+	return nil
+}
+
+func (c *Coordinator) registerOnce(ctx context.Context) error {
 	grantResp, err := c.client.Grant(ctx, c.leaseTTL)
 	if err != nil {
 		return fmt.Errorf("failed to create etcd lease: %w", err)
 	}
-	c.leaseID = grantResp.ID
 
-	// 2. Register Node Key with Lease
+	c.mu.Lock()
+	c.leaseID = grantResp.ID
+	c.mu.Unlock()
+
 	nodeKey := fmt.Sprintf("%s%s", constants.EtcdPrefixEvaluators, c.nodeID)
 	_, err = c.client.Put(ctx, nodeKey, c.nodeID, clientv3.WithLease(c.leaseID))
 	if err != nil {
 		return fmt.Errorf("failed to register evaluator in etcd: %w", err)
 	}
-	log.Printf("[%s] Node '%s' registered with etcd (lease %x, TTL %ds)", constants.ServiceNameEvaluator, c.nodeID, c.leaseID, c.leaseTTL)
 
-	// 3. Initial sync of members
+	log.Printf("[%s] Node '%s' registered with etcd (lease %x, TTL %ds)",
+		constants.ServiceNameEvaluator, c.nodeID, c.leaseID, c.leaseTTL)
+
 	if err := c.refreshMembers(ctx); err != nil {
-		log.Printf("[%s] Warning: initial member refresh failed: %v", constants.ServiceNameEvaluator, err)
+		log.Printf("[%s] Warning: member refresh failed: %v", constants.ServiceNameEvaluator, err)
 	}
+	return nil
+}
 
-	// 4. Start KeepAlive background loop
-	keepAliveCh, err := c.client.KeepAlive(ctx, c.leaseID)
-	if err != nil {
-		return fmt.Errorf("failed to start etcd keepalive: %w", err)
-	}
+func (c *Coordinator) maintainLease(ctx context.Context) {
+	for {
+		select {
+		case <-c.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		default:
+		}
 
-	go func() {
-		for {
+		c.mu.RLock()
+		leaseID := c.leaseID
+		c.mu.RUnlock()
+
+		keepAliveCh, err := c.client.KeepAlive(ctx, leaseID)
+		if err != nil {
+			log.Printf("[%s] Warning: etcd keepalive failed: %v, re-registering in 1s...",
+				constants.ServiceNameEvaluator, err)
 			select {
 			case <-c.stopChan:
 				return
-			case ka, ok := <-keepAliveCh:
-				if !ok {
-					log.Printf("[%s] Warning: etcd keepalive channel closed", constants.ServiceNameEvaluator)
-					return
-				}
-				_ = ka
+			case <-time.After(1 * time.Second):
+				_ = c.registerOnce(ctx)
+				continue
 			}
 		}
-	}()
 
-	// 5. Start Watch loop for evaluator membership changes
-	go c.watchMembers(ctx)
+		keepAliveActive := true
+		for keepAliveActive {
+			select {
+			case <-c.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			case _, ok := <-keepAliveCh:
+				if !ok {
+					log.Printf("[%s] Warning: etcd keepalive channel closed, re-establishing lease immediately...",
+						constants.ServiceNameEvaluator)
+					keepAliveActive = false
+				}
+			}
+		}
 
-	return nil
+		// Channel closed: re-acquire lease and put node key
+		regCtx, regCancel := context.WithTimeout(ctx, 3*time.Second)
+		if err := c.registerOnce(regCtx); err != nil {
+			log.Printf("[%s] Re-registration failed: %v, retrying in 1s...", constants.ServiceNameEvaluator, err)
+			select {
+			case <-c.stopChan:
+				regCancel()
+				return
+			case <-time.After(1 * time.Second):
+			}
+		}
+		regCancel()
+	}
 }
 
 func (c *Coordinator) refreshMembers(ctx context.Context) error {
@@ -124,28 +174,46 @@ func (c *Coordinator) refreshMembers(ctx context.Context) error {
 }
 
 func (c *Coordinator) watchMembers(ctx context.Context) {
-	rch := c.client.Watch(ctx, constants.EtcdPrefixEvaluators, clientv3.WithPrefix())
 	for {
 		select {
 		case <-c.stopChan:
 			return
-		case wresp, ok := <-rch:
-			if !ok {
-				log.Printf("[%s] etcd watch channel closed", constants.ServiceNameEvaluator)
-				return
-			}
-			if wresp.Err() != nil {
-				log.Printf("[%s] etcd watch error: %v", constants.ServiceNameEvaluator, wresp.Err())
-				continue
-			}
-
-			// On any membership change event, refresh entire member list
-			refreshCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if err := c.refreshMembers(refreshCtx); err != nil {
-				log.Printf("[%s] Error refreshing members after watch event: %v", constants.ServiceNameEvaluator, err)
-			}
-			cancel()
+		case <-ctx.Done():
+			return
+		default:
 		}
+
+		rch := c.client.Watch(ctx, constants.EtcdPrefixEvaluators, clientv3.WithPrefix())
+		for {
+			select {
+			case <-c.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			case wresp, ok := <-rch:
+				if !ok {
+					log.Printf("[%s] etcd watch channel closed, re-establishing watcher in 1s...", constants.ServiceNameEvaluator)
+					select {
+					case <-c.stopChan:
+						return
+					case <-time.After(1 * time.Second):
+					}
+					goto ReconnectWatch
+				}
+				if wresp.Err() != nil {
+					log.Printf("[%s] etcd watch error: %v", constants.ServiceNameEvaluator, wresp.Err())
+					continue
+				}
+
+				// On any membership change event, refresh entire member list
+				refreshCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+				if err := c.refreshMembers(refreshCtx); err != nil {
+					log.Printf("[%s] Error refreshing members after watch event: %v", constants.ServiceNameEvaluator, err)
+				}
+				cancel()
+			}
+		}
+	ReconnectWatch:
 	}
 }
 

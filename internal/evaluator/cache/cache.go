@@ -80,19 +80,23 @@ func (s *Store) ApplyEvent(payload model.OutboxEventPayload) {
 
 	case constants.EventTypeFlagKilled:
 		existing, ok := s.flags[envID][payload.FlagKey]
+		var salt string
+		var rules []engine.ParsedRule
 		if ok {
-			existing.State = constants.FlagStateOff
-			existing.Version = payload.FlagVersion
-			existing.FallbackValue = payload.FallbackValue
+			salt = existing.Salt
+			rules = existing.Rules
 		} else {
-			s.flags[envID][payload.FlagKey] = &engine.ParsedFlag{
-				Key:           payload.FlagKey,
-				State:         constants.FlagStateOff,
-				Version:       payload.FlagVersion,
-				FallbackValue: payload.FallbackValue,
-				Salt:          payload.Salt,
-				Rules:         make([]engine.ParsedRule, 0),
-			}
+			salt = payload.Salt
+			rules = make([]engine.ParsedRule, 0)
+		}
+		// Allocate a brand-new immutable struct (Copy-on-Write) to eliminate concurrent read/write data races
+		s.flags[envID][payload.FlagKey] = &engine.ParsedFlag{
+			Key:           payload.FlagKey,
+			State:         constants.FlagStateOff,
+			Version:       payload.FlagVersion,
+			FallbackValue: payload.FallbackValue,
+			Salt:          salt,
+			Rules:         rules,
 		}
 		log.Printf("[%s] Emergency Kill Switch applied: flag '%s' flipped OFF for env '%s'",
 			constants.ServiceNameEvaluator, payload.FlagKey, envID)

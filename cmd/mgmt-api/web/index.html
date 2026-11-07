@@ -596,6 +596,18 @@
           document.getElementById("evalEtcdRev").textContent = `#${evalData.etcd_revision || 0}`;
           document.getElementById("evalNodesList").textContent = JSON.stringify(evalData.cluster_nodes || []);
           document.getElementById("evalSessionCount").textContent = evalData.total_sessions || 0;
+
+          if (selectedEnvId) {
+            try {
+              const shardRes = await fetch(`${EVAL_API}/api/v1/shards/${selectedEnvId}`);
+              if (shardRes.ok) {
+                const shardData = await shardRes.json();
+                document.getElementById("evalOwnedShards").textContent = 
+                  shardData.owned_shards && shardData.owned_shards.length > 0 ? 
+                  `Shards: [${shardData.owned_shards.join(", ")}]` : "None (Rebalanced)";
+              }
+            } catch (e) {}
+          }
         } else {
           throw new Error(`HTTP ${evalRes.status}`);
         }

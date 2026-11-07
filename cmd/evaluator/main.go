@@ -154,14 +154,22 @@ func main() {
 				// Apply to in-memory state
 				rulesStore.ApplyEvent(payload)
 
-				// Check shard ownership on consistent hash ring
+				// Determine shards to re-evaluate: ring-owned shards + locally connected sessions
 				ownedShards := hashRing.GetOwnedShards(cfg.NodeID, payload.EnvironmentID, cfg.ShardCount)
-				if len(ownedShards) == 0 {
+				shardsToEval := make(map[int]struct{})
+				for _, s := range ownedShards {
+					shardsToEval[s] = struct{}{}
+				}
+				for _, s := range sessionRegistry.ActiveShards(payload.EnvironmentID) {
+					shardsToEval[s] = struct{}{}
+				}
+
+				if len(shardsToEval) == 0 {
 					return
 				}
 
 				flags, segments, envVer := rulesStore.GetEnvironmentData(payload.EnvironmentID)
-				for _, shardID := range ownedShards {
+				for shardID := range shardsToEval {
 					patches := sessionRegistry.ReevaluateShard(
 						payload.EnvironmentID,
 						shardID,
@@ -171,8 +179,12 @@ func main() {
 						envVer,
 					)
 					if len(patches) > 0 {
-						log.Printf("[%s] Shard %d: generated %d diff patches for flag '%s' (env_version: %d)",
-							constants.ServiceNameEvaluator, shardID, len(patches), payload.FlagKey, envVer)
+						target := payload.FlagKey
+						if target == "" {
+							target = fmt.Sprintf("segment:%s", payload.SegmentKey)
+						}
+						log.Printf("[%s] Shard %d: generated %d diff patches for target '%s' (env_version: %d)",
+							constants.ServiceNameEvaluator, shardID, len(patches), target, envVer)
 					}
 				}
 			})

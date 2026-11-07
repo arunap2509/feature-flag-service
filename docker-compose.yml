@@ -124,7 +124,57 @@ services:
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
       KAFKA_BROKER: "redpanda:9092"
       ETCD_ENDPOINTS: "etcd:2379"
-      SHARD_COUNT: "1"
+      SHARD_COUNT: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+  evaluator-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.evaluator
+    container_name: ff-evaluator-2
+    restart: unless-stopped
+    ports:
+      - "9002:9002"
+    environment:
+      PORT: "9002"
+      NODE_ID: "evaluator-2"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
+      KAFKA_BROKER: "redpanda:9092"
+      ETCD_ENDPOINTS: "etcd:2379"
+      SHARD_COUNT: "3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+  evaluator-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.evaluator
+    container_name: ff-evaluator-3
+    restart: unless-stopped
+    ports:
+      - "9003:9003"
+    environment:
+      PORT: "9003"
+      NODE_ID: "evaluator-3"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
+      KAFKA_BROKER: "redpanda:9092"
+      ETCD_ENDPOINTS: "etcd:2379"
+      SHARD_COUNT: "3"
     depends_on:
       postgres:
         condition: service_healthy
