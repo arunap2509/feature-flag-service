@@ -29,6 +29,7 @@ import (
 type Config struct {
 	Port          string
 	NodeID        string
+	NodeAddr      string
 	KafkaBroker   string
 	EtcdEndpoints []string
 	DatabaseURL   string
@@ -43,6 +44,10 @@ func loadConfig() Config {
 	nodeID := os.Getenv("NODE_ID")
 	if nodeID == "" {
 		nodeID = fmt.Sprintf("evaluator-%s", port)
+	}
+	nodeAddr := os.Getenv("NODE_ADDR")
+	if nodeAddr == "" {
+		nodeAddr = fmt.Sprintf("http://localhost:%s", port)
 	}
 	broker := os.Getenv("KAFKA_BROKER")
 	if broker == "" {
@@ -66,6 +71,7 @@ func loadConfig() Config {
 	return Config{
 		Port:          port,
 		NodeID:        nodeID,
+		NodeAddr:      nodeAddr,
 		KafkaBroker:   broker,
 		EtcdEndpoints: strings.Split(etcdEp, ","),
 		DatabaseURL:   dbURL,
@@ -105,7 +111,7 @@ func main() {
 	}
 
 	// 3. Connect to etcd and join cluster ring
-	coordinator, err := cluster.NewCoordinator(cfg.EtcdEndpoints, cfg.NodeID, hashRing, constants.DefaultEtcdLeaseTTL)
+	coordinator, err := cluster.NewCoordinator(cfg.EtcdEndpoints, cfg.NodeID, cfg.NodeAddr, hashRing, constants.DefaultEtcdLeaseTTL)
 	if err != nil {
 		log.Fatalf("[%s] Failed to initialize etcd coordinator: %v", constants.ServiceNameEvaluator, err)
 	}
@@ -114,7 +120,17 @@ func main() {
 	}
 	defer coordinator.Stop()
 
-	// 4. Initialize Kafka Consumer for flag-changes topic
+	// 4. Initialize Kafka Deliveries Producer (Slot Mailboxes)
+	deliveriesProducer, err := kgo.NewClient(
+		kgo.SeedBrokers(cfg.KafkaBroker),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	)
+	if err != nil {
+		log.Fatalf("[%s] Failed to initialize Kafka deliveries producer: %v", constants.ServiceNameEvaluator, err)
+	}
+	defer deliveriesProducer.Close()
+
+	// 5. Initialize Kafka Consumer for flag-changes topic
 	kafkaClient, err := kgo.NewClient(
 		kgo.SeedBrokers(cfg.KafkaBroker),
 		kgo.ConsumeTopics(constants.TopicFlagChanges),
@@ -185,6 +201,41 @@ func main() {
 						}
 						log.Printf("[%s] Shard %d: generated %d diff patches for target '%s' (env_version: %d)",
 							constants.ServiceNameEvaluator, shardID, len(patches), target, envVer)
+
+						// Group patches by Connection Server slot ID and publish to Kafka deliveries topic
+						slotBatches := make(map[int][]session.DiffPatch)
+						for _, p := range patches {
+							if p.ServerSlot > 0 {
+								slotBatches[p.ServerSlot] = append(slotBatches[p.ServerSlot], p)
+							}
+						}
+
+						for slotID, pList := range slotBatches {
+							batchData, err := json.Marshal(map[string]any{
+								"slot_id":     slotID,
+								"env_id":      payload.EnvironmentID,
+								"env_version": envVer,
+								"patches":     pList,
+							})
+							if err != nil {
+								log.Printf("[%s] Error marshaling deliveries batch: %v", constants.ServiceNameEvaluator, err)
+								continue
+							}
+
+							// Map slotID (e.g. 1..8) to 0-indexed partition (0..7)
+							partition := int32((slotID - 1) % constants.DefaultDeliveriesPartitions)
+							rec := &kgo.Record{
+								Topic:     constants.TopicDeliveries,
+								Partition: partition,
+								Value:     batchData,
+							}
+							deliveriesProducer.Produce(ctx, rec, func(_ *kgo.Record, err error) {
+								if err != nil {
+									log.Printf("[%s] Deliveries produce error for slot %d (partition %d): %v",
+										constants.ServiceNameEvaluator, slotID, partition, err)
+								}
+							})
+						}
 					}
 				}
 			})
@@ -269,6 +320,25 @@ func main() {
 			"shard_id":            sess.ShardID,
 			"environment_version": envVer,
 			"answers":             sess.LastAnswers,
+		})
+	})
+
+	// Session deregistration (called when Connection Server detects client disconnect)
+	mux.HandleFunc("POST /api/v1/sessions/deregister", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			EnvID        string `json:"env_id"`
+			ShardID      int    `json:"shard_id"`
+			ConnectionID string `json:"connection_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, constants.ErrMsgInvalidRequestBody, http.StatusBadRequest)
+			return
+		}
+
+		sessionRegistry.Deregister(req.EnvID, req.ShardID, req.ConnectionID)
+		w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"status": "deregistered",
 		})
 	})
 

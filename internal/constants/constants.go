@@ -51,10 +51,11 @@ const (
 
 // Service Metadata
 const (
-	ServiceNameMgmtAPI   = "management-api"
-	ServiceNameOutboxPub = "outbox-cdc-publisher"
-	ServiceNameEvaluator = "evaluator"
-	StatusHealthy        = "ok"
+	ServiceNameMgmtAPI    = "management-api"
+	ServiceNameOutboxPub  = "outbox-cdc-publisher"
+	ServiceNameEvaluator  = "evaluator"
+	ServiceNameConnServer = "conn-server"
+	StatusHealthy         = "ok"
 )
 
 // Transactional Outbox & Logical Replication (CDC)
@@ -86,9 +87,21 @@ const (
 
 // Distributed Coordination (etcd)
 const (
-	DefaultEtcdEndpoints = "etcd:2379"
-	EtcdPrefixEvaluators = "/members/evaluators/"
-	DefaultEtcdLeaseTTL  = 3
+	DefaultEtcdEndpoints  = "etcd:2379"
+	EtcdPrefixEvaluators  = "/members/evaluators/"
+	EtcdPrefixConnServers = "/members/conn-servers/"
+	DefaultEtcdLeaseTTL   = 3
+	DefaultConnServerPort = "8091"
+	DefaultDeliveriesPartitions = 8
+	DefaultKeepaliveIntervalSec = 15
+)
+
+// Server-Sent Events (SSE) Protocol
+const (
+	HeaderLastEventID = "Last-Event-ID"
+	SSEEventPut       = "put"
+	SSEEventPatch     = "patch"
+	SSEEventPing      = "ping"
 )
 
 // Error Messages

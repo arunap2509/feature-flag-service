@@ -133,9 +133,11 @@
     <div class="pipe-arrow">──►</div>
     <div class="pipe-node"><div class="pipe-dot"></div> etcd Ring (:2379)</div>
     <div class="pipe-arrow">──►</div>
-    <div class="pipe-node"><div class="pipe-dot"></div> Evaluator (:9001)</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Evaluators (3x Ring)</div>
     <div class="pipe-arrow">──►</div>
-    <div class="pipe-node"><div class="pipe-dot"></div> Shards (Edge)</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Kafka Deliveries</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Edge Conn-Servers (:8091, :8092)</div>
   </div>
 
   <!-- Tenant & Environment Selector Bar -->
@@ -206,6 +208,13 @@
         <div class="card-header">
           <h3>Client Evaluation Simulator</h3>
           <span class="badge badge-blue">&lt; 1µs Target</span>
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <select id="simGatewaySelect" style="width: 100%; font-size: 12px; background: #0d1117; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px;">
+            <option value="8091">Edge Connection Server Slot 1 (:8091) [Decoupled SSE]</option>
+            <option value="8092">Edge Connection Server Slot 2 (:8092) [Decoupled SSE]</option>
+            <option value="9001">Direct Evaluator Node 1 (:9001)</option>
+          </select>
         </div>
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <input type="text" id="simUserID" value="usr_alice" placeholder="User ID" style="flex: 1;" />
@@ -711,9 +720,13 @@
 
       const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
       const connID = "conn_" + Math.random().toString(36).substring(2, 9);
-      const url = `${EVAL_API}/api/v1/sessions/stream?user_id=${encodeURIComponent(userID)}&env_id=${encodeURIComponent(selectedEnvId)}&conn_id=${encodeURIComponent(connID)}`;
+      const gatewayPort = document.getElementById("simGatewaySelect") ? document.getElementById("simGatewaySelect").value : "8091";
+      const isConnServer = gatewayPort === "8091" || gatewayPort === "8092";
+      const streamBase = `http://${defaultHost}:${gatewayPort}`;
+      const streamPath = isConnServer ? "/api/v1/stream" : "/api/v1/sessions/stream";
+      const url = `${streamBase}${streamPath}?user_id=${encodeURIComponent(userID)}&env_id=${encodeURIComponent(selectedEnvId)}&conn_id=${encodeURIComponent(connID)}`;
 
-      showToast(`Connecting live SSE stream for ${userID}...`, "info");
+      showToast(`Connecting live SSE via :${gatewayPort} for ${userID}...`, "info");
       document.getElementById("simResults").innerHTML = `<div style="color: var(--accent);">Connecting to real-time SSE stream...</div>`;
 
       activeEventSource = new EventSource(url);

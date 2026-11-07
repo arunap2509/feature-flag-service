@@ -121,6 +121,7 @@ services:
     environment:
       PORT: "9001"
       NODE_ID: "evaluator-1"
+      NODE_ADDR: "http://evaluator:9001"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
       KAFKA_BROKER: "redpanda:9092"
       ETCD_ENDPOINTS: "etcd:2379"
@@ -146,6 +147,7 @@ services:
     environment:
       PORT: "9002"
       NODE_ID: "evaluator-2"
+      NODE_ADDR: "http://evaluator-2:9002"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
       KAFKA_BROKER: "redpanda:9092"
       ETCD_ENDPOINTS: "etcd:2379"
@@ -171,6 +173,7 @@ services:
     environment:
       PORT: "9003"
       NODE_ID: "evaluator-3"
+      NODE_ADDR: "http://evaluator-3:9003"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
       KAFKA_BROKER: "redpanda:9092"
       ETCD_ENDPOINTS: "etcd:2379"
@@ -184,6 +187,60 @@ services:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
+
+  conn-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.conn-server
+    container_name: ff-conn-server
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    environment:
+      PORT: "8091"
+      SLOT_ID: "1"
+      SERVER_ADDR: "http://conn-server:8091"
+      KAFKA_BROKER: "redpanda:9092"
+      ETCD_ENDPOINTS: "etcd:2379"
+      SHARD_COUNT: "3"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+      evaluator:
+        condition: service_started
+      evaluator-2:
+        condition: service_started
+      evaluator-3:
+        condition: service_started
+
+  conn-server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.conn-server
+    container_name: ff-conn-server-2
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    environment:
+      PORT: "8092"
+      SLOT_ID: "2"
+      SERVER_ADDR: "http://conn-server-2:8092"
+      KAFKA_BROKER: "redpanda:9092"
+      ETCD_ENDPOINTS: "etcd:2379"
+      SHARD_COUNT: "3"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      etcd:
+        condition: service_healthy
+      evaluator:
+        condition: service_started
+      evaluator-2:
+        condition: service_started
+      evaluator-3:
+        condition: service_started
 
 volumes:
   postgres_data:

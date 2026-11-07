@@ -16,20 +16,25 @@ import (
 
 // Coordinator manages evaluator cluster membership and lease tracking via etcd
 type Coordinator struct {
-	client       *clientv3.Client
-	nodeID       string
-	ring         *ring.Ring
-	leaseID      clientv3.LeaseID
-	revision     int64
-	mu           sync.RWMutex
-	stopChan     chan struct{}
-	leaseTTL     int64
+	client    *clientv3.Client
+	nodeID    string
+	nodeAddr  string
+	ring      *ring.Ring
+	leaseID   clientv3.LeaseID
+	revision  int64
+	nodeAddrs map[string]string
+	mu        sync.RWMutex
+	stopChan  chan struct{}
+	leaseTTL  int64
 }
 
 // NewCoordinator creates a new cluster coordinator connected to etcd
-func NewCoordinator(endpoints []string, nodeID string, hashRing *ring.Ring, leaseTTL int64) (*Coordinator, error) {
+func NewCoordinator(endpoints []string, nodeID, nodeAddr string, hashRing *ring.Ring, leaseTTL int64) (*Coordinator, error) {
 	if leaseTTL <= 0 {
 		leaseTTL = constants.DefaultEtcdLeaseTTL
+	}
+	if nodeAddr == "" {
+		nodeAddr = nodeID
 	}
 
 	cli, err := clientv3.New(clientv3.Config{
@@ -41,11 +46,13 @@ func NewCoordinator(endpoints []string, nodeID string, hashRing *ring.Ring, leas
 	}
 
 	return &Coordinator{
-		client:   cli,
-		nodeID:   nodeID,
-		ring:     hashRing,
-		stopChan: make(chan struct{}),
-		leaseTTL: leaseTTL,
+		client:    cli,
+		nodeID:    nodeID,
+		nodeAddr:  nodeAddr,
+		ring:      hashRing,
+		nodeAddrs: make(map[string]string),
+		stopChan:  make(chan struct{}),
+		leaseTTL:  leaseTTL,
 	}, nil
 }
 
@@ -76,13 +83,13 @@ func (c *Coordinator) registerOnce(ctx context.Context) error {
 	c.mu.Unlock()
 
 	nodeKey := fmt.Sprintf("%s%s", constants.EtcdPrefixEvaluators, c.nodeID)
-	_, err = c.client.Put(ctx, nodeKey, c.nodeID, clientv3.WithLease(c.leaseID))
+	_, err = c.client.Put(ctx, nodeKey, c.nodeAddr, clientv3.WithLease(c.leaseID))
 	if err != nil {
 		return fmt.Errorf("failed to register evaluator in etcd: %w", err)
 	}
 
-	log.Printf("[%s] Node '%s' registered with etcd (lease %x, TTL %ds)",
-		constants.ServiceNameEvaluator, c.nodeID, c.leaseID, c.leaseTTL)
+	log.Printf("[%s] Node '%s' (%s) registered with etcd (lease %x, TTL %ds)",
+		constants.ServiceNameEvaluator, c.nodeID, c.nodeAddr, c.leaseID, c.leaseTTL)
 
 	if err := c.refreshMembers(ctx); err != nil {
 		log.Printf("[%s] Warning: member refresh failed: %v", constants.ServiceNameEvaluator, err)
@@ -154,23 +161,33 @@ func (c *Coordinator) refreshMembers(ctx context.Context) error {
 		return err
 	}
 
-	c.mu.Lock()
-	c.revision = resp.Header.Revision
-	c.mu.Unlock()
-
 	nodeIDs := make([]string, 0, len(resp.Kvs))
+	nodeAddrs := make(map[string]string)
 	for _, kv := range resp.Kvs {
 		key := string(kv.Key)
 		nodeID := strings.TrimPrefix(key, constants.EtcdPrefixEvaluators)
 		if nodeID != "" {
 			nodeIDs = append(nodeIDs, nodeID)
+			nodeAddrs[nodeID] = string(kv.Value)
 		}
 	}
+
+	c.mu.Lock()
+	c.revision = resp.Header.Revision
+	c.nodeAddrs = nodeAddrs
+	c.mu.Unlock()
 
 	c.ring.SetMembers(nodeIDs)
 	log.Printf("[%s] Cluster ring updated (revision %d). Active nodes (%d): %v",
 		constants.ServiceNameEvaluator, resp.Header.Revision, len(nodeIDs), nodeIDs)
 	return nil
+}
+
+// GetMemberAddr returns the advertised network address for an evaluator node ID
+func (c *Coordinator) GetMemberAddr(nodeID string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nodeAddrs[nodeID]
 }
 
 func (c *Coordinator) watchMembers(ctx context.Context) {
