@@ -239,11 +239,14 @@ func (s *Service) GetFlagHistory(ctx context.Context, envID, key string) ([]mode
 
 // --- Segments ---
 
-func (s *Service) CreateSegment(ctx context.Context, envID string, req model.CreateSegmentRequest) (*model.SegmentResponse, error) {
+func (s *Service) CreateSegment(ctx context.Context, envID string, req model.CreateSegmentRequest, changedBy string) (*model.SegmentResponse, error) {
 	if strings.TrimSpace(req.Key) == "" {
 		return nil, errors.New(constants.ErrMsgSegmentKeyRequired)
 	}
-	seg, err := s.repo.CreateSegment(ctx, envID, req)
+	if strings.TrimSpace(changedBy) == "" {
+		changedBy = "system"
+	}
+	seg, err := s.repo.CreateSegment(ctx, envID, req, changedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +269,7 @@ func (s *Service) ListSegments(ctx context.Context, envID string) ([]model.Segme
 	return model.ToSegmentResponses(segs), nil
 }
 
-func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest, ifMatchHeader string) (*model.SegmentResponse, error) {
+func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest, ifMatchHeader string, changedBy string) (*model.SegmentResponse, error) {
 	var expectedVersion *int64
 	if ifMatchHeader != "" {
 		clean := strings.Trim(ifMatchHeader, `"`)
@@ -276,8 +279,11 @@ func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req mode
 		}
 		expectedVersion = &ver
 	}
+	if strings.TrimSpace(changedBy) == "" {
+		changedBy = "system"
+	}
 
-	seg, err := s.repo.UpdateSegment(ctx, envID, key, req, expectedVersion)
+	seg, err := s.repo.UpdateSegment(ctx, envID, key, req, expectedVersion, changedBy)
 	if err != nil {
 		return nil, err
 	}

@@ -66,6 +66,7 @@ const (
 	EventTypeFlagUpdated    = "FLAG_UPDATED"
 	EventTypeFlagKilled     = "FLAG_KILLED"
 	EventTypeFlagRolledBack = "FLAG_ROLLED_BACK"
+	EventTypeSegmentCreated = "SEGMENT_CREATED"
 	EventTypeSegmentUpdated = "SEGMENT_UPDATED"
 )
 

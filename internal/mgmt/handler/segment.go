@@ -16,7 +16,8 @@ func (h *Handler) CreateSegment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, constants.ErrMsgInvalidRequestBody)
 		return
 	}
-	seg, err := h.svc.CreateSegment(r.Context(), envID, req)
+	changedBy := r.Header.Get(constants.HeaderUser)
+	seg, err := h.svc.CreateSegment(r.Context(), envID, req, changedBy)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -56,7 +57,8 @@ func (h *Handler) UpdateSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ifMatch := r.Header.Get(constants.HeaderIfMatch)
-	seg, err := h.svc.UpdateSegment(r.Context(), envID, key, req, ifMatch)
+	changedBy := r.Header.Get(constants.HeaderUser)
+	seg, err := h.svc.UpdateSegment(r.Context(), envID, key, req, ifMatch, changedBy)
 	if err != nil {
 		h.handleError(w, err)
 		return

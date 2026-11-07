@@ -91,6 +91,7 @@ type OutboxEventPayload struct {
 	FlagVersion        int64           `json:"flag_version,omitempty"`
 	Rules              json.RawMessage `json:"rules,omitempty"`
 	FallbackValue      bool            `json:"fallback_value,omitempty"`
+	Salt               string          `json:"salt,omitempty"`
 	UserIDs            json.RawMessage `json:"user_ids,omitempty"`
 	ChangedBy          string          `json:"changed_by"`
 	Timestamp          time.Time       `json:"timestamp"`

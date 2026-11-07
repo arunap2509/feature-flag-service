@@ -107,13 +107,7 @@ func (r *Repository) CreateEnvironment(ctx context.Context, id, tenantID, name s
 }
 
 func (r *Repository) GetEnvironment(ctx context.Context, id string) (*model.Environment, error) {
-	query := `
-		SELECT e.id, e.tenant_id, e.name, 
-		       COALESCE((SELECT MAX(o.env_version) FROM outbox o WHERE o.env_id = e.id), e.environment_version) AS environment_version,
-		       e.shard_count, e.created_at 
-		FROM environments e 
-		WHERE e.id = $1
-	`
+	query := `SELECT id, tenant_id, name, environment_version, shard_count, created_at FROM environments WHERE id = $1`
 	env := &model.Environment{}
 	err := r.db.QueryRowContext(ctx, query, id).
 		Scan(&env.ID, &env.TenantID, &env.Name, &env.EnvironmentVersion, &env.ShardCount, &env.CreatedAt)
@@ -127,14 +121,7 @@ func (r *Repository) GetEnvironment(ctx context.Context, id string) (*model.Envi
 }
 
 func (r *Repository) ListEnvironments(ctx context.Context, tenantID string) ([]model.Environment, error) {
-	query := `
-		SELECT e.id, e.tenant_id, e.name, 
-		       COALESCE((SELECT MAX(o.env_version) FROM outbox o WHERE o.env_id = e.id), e.environment_version) AS environment_version,
-		       e.shard_count, e.created_at 
-		FROM environments e 
-		WHERE e.tenant_id = $1 
-		ORDER BY e.created_at ASC
-	`
+	query := `SELECT id, tenant_id, name, environment_version, shard_count, created_at FROM environments WHERE tenant_id = $1 ORDER BY created_at ASC`
 	rows, err := r.db.QueryContext(ctx, query, tenantID)
 	if err != nil {
 		return nil, err
@@ -224,10 +211,10 @@ func (r *Repository) CreateFlag(ctx context.Context, envID string, req model.Cre
 		return nil, fmt.Errorf("failed to insert flag: %w", err)
 	}
 
-	// 2. Generate non-blocking environment version sequence (eliminates row-locking on environments)
+	// 2. Atomically increment canonical environment version
 	var nextEnvVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT nextval('environment_version_seq')`).Scan(&nextEnvVersion); err != nil {
-		return nil, fmt.Errorf("failed to generate environment version: %w", err)
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
 	}
 
 	// 3. Insert into flag_history
@@ -249,6 +236,7 @@ func (r *Repository) CreateFlag(ctx context.Context, envID string, req model.Cre
 		FlagVersion:        flag.Version,
 		Rules:              flag.Rules,
 		FallbackValue:      flag.FallbackValue,
+		Salt:               flag.Salt,
 		ChangedBy:          changedBy,
 		Timestamp:          time.Now().UTC(),
 	}
@@ -358,10 +346,10 @@ func (r *Repository) UpdateFlag(ctx context.Context, envID, key string, req mode
 		return nil, fmt.Errorf("failed to update flag: %w", err)
 	}
 
-	// 5. Generate non-blocking environment version sequence
+	// 5. Atomically increment canonical environment version
 	var nextEnvVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT nextval('environment_version_seq')`).Scan(&nextEnvVersion); err != nil {
-		return nil, fmt.Errorf("failed to generate environment version: %w", err)
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
 	}
 
 	// 6. Insert flag_history
@@ -380,6 +368,7 @@ func (r *Repository) UpdateFlag(ctx context.Context, envID, key string, req mode
 		FlagVersion:        updatedFlag.Version,
 		Rules:              updatedFlag.Rules,
 		FallbackValue:      updatedFlag.FallbackValue,
+		Salt:               updatedFlag.Salt,
 		ChangedBy:          changedBy,
 		Timestamp:          time.Now().UTC(),
 	}
@@ -428,10 +417,10 @@ func (r *Repository) KillFlag(ctx context.Context, envID, key string, changedBy 
 		return nil, fmt.Errorf("failed to kill flag: %w", err)
 	}
 
-	// 3. Generate non-blocking environment version sequence
+	// 3. Atomically increment canonical environment version
 	var nextEnvVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT nextval('environment_version_seq')`).Scan(&nextEnvVersion); err != nil {
-		return nil, fmt.Errorf("failed to generate environment version: %w", err)
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
 	}
 
 	// 4. Record history
@@ -450,6 +439,7 @@ func (r *Repository) KillFlag(ctx context.Context, envID, key string, changedBy 
 		FlagVersion:        killedFlag.Version,
 		Rules:              killedFlag.Rules,
 		FallbackValue:      killedFlag.FallbackValue,
+		Salt:               killedFlag.Salt,
 		ChangedBy:          changedBy,
 		Timestamp:          time.Now().UTC(),
 	}
@@ -510,10 +500,10 @@ func (r *Repository) RollbackFlag(ctx context.Context, envID, key string, target
 		return nil, fmt.Errorf("failed to rollback flag: %w", err)
 	}
 
-	// 4. Generate non-blocking environment version sequence
+	// 4. Atomically increment canonical environment version
 	var nextEnvVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT nextval('environment_version_seq')`).Scan(&nextEnvVersion); err != nil {
-		return nil, fmt.Errorf("failed to generate environment version: %w", err)
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
 	}
 
 	// 5. Record rollback in history
@@ -533,6 +523,7 @@ func (r *Repository) RollbackFlag(ctx context.Context, envID, key string, target
 		FlagVersion:        rolledBackFlag.Version,
 		Rules:              rolledBackFlag.Rules,
 		FallbackValue:      rolledBackFlag.FallbackValue,
+		Salt:               rolledBackFlag.Salt,
 		ChangedBy:          changedBy,
 		Timestamp:          time.Now().UTC(),
 	}
@@ -573,7 +564,13 @@ func (r *Repository) GetFlagHistory(ctx context.Context, envID, key string) ([]m
 
 // --- Segments ---
 
-func (r *Repository) CreateSegment(ctx context.Context, envID string, req model.CreateSegmentRequest) (*model.Segment, error) {
+func (r *Repository) CreateSegment(ctx context.Context, envID string, req model.CreateSegmentRequest, changedBy string) (*model.Segment, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
 	userIDsJSON, err := json.Marshal(req.UserIDs)
 	if err != nil {
 		userIDsJSON = []byte("[]")
@@ -585,10 +582,34 @@ func (r *Repository) CreateSegment(ctx context.Context, envID string, req model.
 		RETURNING id, environment_id, key, version, user_ids, updated_at
 	`
 	seg := &model.Segment{}
-	err = r.db.QueryRowContext(ctx, query, envID, req.Key, constants.DefaultFlagVersion, userIDsJSON).
+	err = tx.QueryRowContext(ctx, query, envID, req.Key, constants.DefaultFlagVersion, userIDsJSON).
 		Scan(&seg.ID, &seg.EnvironmentID, &seg.Key, &seg.Version, &seg.UserIDs, &seg.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create segment: %w", err)
+	}
+
+	// Increment environment version atomically
+	var nextEnvVersion int64
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
+	}
+
+	// Insert transactional outbox event
+	outboxPayload := model.OutboxEventPayload{
+		EventType:          constants.EventTypeSegmentCreated,
+		EnvironmentID:      envID,
+		EnvironmentVersion: nextEnvVersion,
+		SegmentKey:         seg.Key,
+		UserIDs:            seg.UserIDs,
+		ChangedBy:          changedBy,
+		Timestamp:          time.Now().UTC(),
+	}
+	if err := insertOutbox(ctx, tx, envID, nextEnvVersion, constants.EventTypeSegmentCreated, outboxPayload); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return seg, nil
 }
@@ -626,7 +647,7 @@ func (r *Repository) ListSegments(ctx context.Context, envID string) ([]model.Se
 	return segs, nil
 }
 
-func (r *Repository) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest, expectedVersion *int64) (*model.Segment, error) {
+func (r *Repository) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest, expectedVersion *int64, changedBy string) (*model.Segment, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -667,10 +688,10 @@ func (r *Repository) UpdateSegment(ctx context.Context, envID, key string, req m
 		return nil, fmt.Errorf("failed to update segment: %w", err)
 	}
 
-	// 3. Generate non-blocking environment version sequence
+	// 3. Atomically increment canonical environment version
 	var nextEnvVersion int64
-	if err := tx.QueryRowContext(ctx, `SELECT nextval('environment_version_seq')`).Scan(&nextEnvVersion); err != nil {
-		return nil, fmt.Errorf("failed to generate environment version: %w", err)
+	if err := tx.QueryRowContext(ctx, `UPDATE environments SET environment_version = environment_version + 1 WHERE id = $1 RETURNING environment_version`, envID).Scan(&nextEnvVersion); err != nil {
+		return nil, fmt.Errorf("failed to increment environment version: %w", err)
 	}
 
 	// 4. Insert into outbox (Transactional Outbox)
@@ -680,7 +701,7 @@ func (r *Repository) UpdateSegment(ctx context.Context, envID, key string, req m
 		EnvironmentVersion: nextEnvVersion,
 		SegmentKey:         seg.Key,
 		UserIDs:            seg.UserIDs,
-		ChangedBy:          "segment_admin",
+		ChangedBy:          changedBy,
 		Timestamp:          time.Now().UTC(),
 	}
 	if err := insertOutbox(ctx, tx, envID, nextEnvVersion, constants.EventTypeSegmentUpdated, outboxPayload); err != nil {

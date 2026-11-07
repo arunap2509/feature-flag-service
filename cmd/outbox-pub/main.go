@@ -170,9 +170,7 @@ func main() {
 			if ctx.Err() != nil {
 				break
 			}
-			log.Printf("[%s] Error receiving replication message: %v", constants.ServiceNameOutboxPub, err)
-			time.Sleep(1 * time.Second)
-			continue
+			log.Fatalf("[%s] FATAL: Replication connection lost: %v. Exiting for orchestrator restart.", constants.ServiceNameOutboxPub, err)
 		}
 
 		if errMsg, ok := rawMsg.(*pgproto3.ErrorResponse); ok {
@@ -193,7 +191,11 @@ func main() {
 				continue
 			}
 			if pkm.ReplyRequested {
-				if err := sendStatusUpdate(ctx, conn, lastWrittenLSN); err != nil {
+				targetLSN := lastWrittenLSN
+				if targetLSN == 0 {
+					targetLSN = pkm.ServerWALEnd
+				}
+				if err := sendStatusUpdate(ctx, conn, targetLSN); err != nil {
 					log.Printf("[%s] Failed to send requested status update: %v", constants.ServiceNameOutboxPub, err)
 				}
 				nextStandbyMessageDeadline = time.Now().Add(10 * time.Second)
@@ -215,6 +217,17 @@ func main() {
 			switch msg := logicalMsg.(type) {
 			case *pglogrepl.RelationMessage:
 				relations[msg.RelationID] = msg
+
+			case *pglogrepl.BeginMessage:
+				// Transaction started
+
+			case *pglogrepl.CommitMessage:
+				if msg.CommitLSN > lastWrittenLSN {
+					lastWrittenLSN = msg.CommitLSN
+				}
+				if err := sendStatusUpdate(ctx, conn, lastWrittenLSN); err != nil {
+					log.Printf("[%s] Failed to flush commit LSN to Postgres: %v", constants.ServiceNameOutboxPub, err)
+				}
 
 			case *pglogrepl.InsertMessage:
 				rel, exists := relations[msg.RelationID]
