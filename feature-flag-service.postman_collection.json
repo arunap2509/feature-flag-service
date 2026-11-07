@@ -1,0 +1,441 @@
+{
+  "info": {
+    "name": "Feature Flag Management API",
+    "_postman_id": "8f5a11d2-7c34-4b5a-9b41-e941199a5c81",
+    "description": "API collection for the Distributed Real-Time Feature Flag Service Management API.\nCan be imported directly into Bruno Desktop (Import Collection -> Postman Collection).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "ten_01a1b4c8b7ee48e73585e81aef69",
+      "type": "string"
+    },
+    {
+      "key": "envId",
+      "value": "env_01a1b4c8cfaa599d03fea01109a4",
+      "type": "string"
+    },
+    {
+      "key": "flagKey",
+      "value": "search_algorithm_v3",
+      "type": "string"
+    },
+    {
+      "key": "segmentKey",
+      "value": "beta_testers",
+      "type": "string"
+    },
+    {
+      "key": "callerUser",
+      "value": "release-lead@corp.internal",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00. Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/healthz",
+              "host": ["{{baseUrl}}"],
+              "path": ["healthz"]
+            },
+            "description": "Liveness/readiness probe endpoint."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01. Tenants",
+      "item": [
+        {
+          "name": "Create Tenant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Global\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tenants"]
+            },
+            "description": "Creates a new tenant. Server automatically generates a prefixed monotonic ID (e.g. ten_...)."
+          }
+        },
+        {
+          "name": "Get Tenant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tenants", "{{tenantId}}"]
+            },
+            "description": "Fetches a tenant by ID."
+          }
+        },
+        {
+          "name": "List Tenants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tenants"]
+            },
+            "description": "Lists all registered tenants."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Environments",
+      "item": [
+        {
+          "name": "Create Environment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"production\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}/environments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tenants", "{{tenantId}}", "environments"]
+            },
+            "description": "Creates an environment under a tenant. Server generates a prefixed ID (e.g. env_...) and initializes environment_version to 1."
+          }
+        },
+        {
+          "name": "Get Environment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}"]
+            },
+            "description": "Fetches an environment by ID."
+          }
+        },
+        {
+          "name": "List Environments for Tenant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tenants/{{tenantId}}/environments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tenants", "{{tenantId}}", "environments"]
+            },
+            "description": "Lists all environments for a given tenant."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. SDK Keys",
+      "item": [
+        {
+          "name": "Create Client SDK Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key_type\": \"client\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "keys"]
+            },
+            "description": "Creates a public client SDK key for mobile/web clients."
+          }
+        },
+        {
+          "name": "Create Server SDK Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key_type\": \"server\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "keys"]
+            },
+            "description": "Creates a privileged server SDK key."
+          }
+        },
+        {
+          "name": "List SDK Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "keys"]
+            },
+            "description": "Lists all SDK keys for an environment."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Flags",
+      "item": [
+        {
+          "name": "Create Flag",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User",
+                "value": "{{callerUser}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"search_algorithm_v3\",\n  \"state\": \"on\",\n  \"fallback_value\": false,\n  \"rules\": [\n    {\n      \"order\": 1,\n      \"segment\": \"beta_testers\",\n      \"value\": true\n    },\n    {\n      \"order\": 2,\n      \"rollout_percentage\": 20,\n      \"value\": true\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags"]
+            },
+            "description": "Creates a new feature flag in an environment. Starts at version 1 and advances environment_version."
+          }
+        },
+        {
+          "name": "Get Flag",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags/{{flagKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags", "{{flagKey}}"]
+            },
+            "description": "Fetches a flag by key. Returns current version and rules, along with ETag header for optimistic concurrency."
+          }
+        },
+        {
+          "name": "List Flags",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags"]
+            },
+            "description": "Lists all flags in an environment."
+          }
+        },
+        {
+          "name": "Update Flag (Optimistic Locking via If-Match)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User",
+                "value": "{{callerUser}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"1\"",
+                "description": "Must match current flag version. If version is stale, returns 412 Precondition Failed."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": \"on\",\n  \"fallback_value\": true,\n  \"rules\": [\n    {\n      \"order\": 1,\n      \"rollout_percentage\": 50,\n      \"value\": true\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags/{{flagKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags", "{{flagKey}}"]
+            },
+            "description": "Updates flag definition. Requires valid If-Match header matching the current flag version."
+          }
+        },
+        {
+          "name": "Emergency Kill Switch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "alert-bot:datadog-canary@corp.internal",
+                "description": "Required audit caller identity."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags/{{flagKey}}/kill",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags", "{{flagKey}}", "kill"]
+            },
+            "description": "Immediately flips flag state to 'off', bypasses If-Match version checks, and bumps environment_version."
+          }
+        },
+        {
+          "name": "Rollback Flag to Version",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-User",
+                "value": "{{callerUser}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags/{{flagKey}}/rollback/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags", "{{flagKey}}", "rollback", "1"]
+            },
+            "description": "Copies rules from target historical version and writes them forward as a new incremented version."
+          }
+        },
+        {
+          "name": "Get Flag History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/flags/{{flagKey}}/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "flags", "{{flagKey}}", "history"]
+            },
+            "description": "Returns full audit trail for the flag, including which user or automated bot made each change."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Segments",
+      "item": [
+        {
+          "name": "Create Segment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"beta_testers\",\n  \"user_ids\": [\"usr_101\", \"usr_102\", \"usr_103\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/segments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "segments"]
+            },
+            "description": "Creates a reusable target segment of user IDs in the environment."
+          }
+        },
+        {
+          "name": "Get Segment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/segments/{{segmentKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "segments", "{{segmentKey}}"]
+            },
+            "description": "Fetches a segment by key."
+          }
+        },
+        {
+          "name": "List Segments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/segments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "segments"]
+            },
+            "description": "Lists all segments in an environment."
+          }
+        },
+        {
+          "name": "Update Segment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_ids\": [\"usr_101\", \"usr_102\", \"usr_104\", \"usr_105\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/environments/{{envId}}/segments/{{segmentKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "environments", "{{envId}}", "segments", "{{segmentKey}}"]
+            },
+            "description": "Updates segment member user IDs and advances environment_version."
+          }
+        }
+      ]
+    }
+  ]
+}

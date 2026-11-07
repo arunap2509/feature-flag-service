@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ff-postgres
+    restart: unless-stopped
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=5", "-c", "max_wal_senders=5"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: featureflags
+    ports:
+      - "5440:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d featureflags"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: ff-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --smp 1
+      - --memory 512M
+      - --mode dev-container
+    ports:
+      - "19092:19092"
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster info || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  migration:
+    image: migrate/migrate:v4.17.0
+    container_name: ff-migration
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  mgmt-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.mgmt-api
+    container_name: ff-mgmt-api
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
+      PORT: "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+  outbox-pub:
+    build:
+      context: .
+      dockerfile: Dockerfile.outbox-pub
+    container_name: ff-outbox-pub
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
+      KAFKA_BROKER: "redpanda:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:

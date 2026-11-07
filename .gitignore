@@ -1,0 +1,24 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS and Editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Preview temporary directories
+.archify-preview-*
+
+# Learning notes
+learning/
+
+# Architecture diagrams and specifications
+application-flow/
+feature-flag-system.html
+my-system.json
+
+
