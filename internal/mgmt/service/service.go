@@ -289,3 +289,7 @@ func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req mode
 	}
 	return model.ToSegmentResponse(seg), nil
 }
+
+func (s *Service) GetRecentOutbox(ctx context.Context, limit int) ([]model.OutboxRecord, error) {
+	return s.repo.GetRecentOutbox(ctx, limit)
+}

@@ -42,12 +42,18 @@ const (
 	DefaultEnvironmentVersion = 1
 	DefaultFlagVersion        = 1
 	DefaultPort               = "8081"
+	DefaultEvaluatorPort      = "9001"
+	DefaultVirtualNodes       = 100
+	RolloutBucketModulus      = 100000
+	RolloutMultiplier         = 1000
+	DefaultOutboxLimit        = 25
 )
 
 // Service Metadata
 const (
 	ServiceNameMgmtAPI   = "management-api"
 	ServiceNameOutboxPub = "outbox-cdc-publisher"
+	ServiceNameEvaluator = "evaluator"
 	StatusHealthy        = "ok"
 )
 
@@ -72,8 +78,17 @@ const (
 
 // Message Broker (Kafka / Redpanda)
 const (
-	TopicFlagChanges   = "flag-changes"
-	DefaultKafkaBroker = "redpanda:9092"
+	TopicFlagChanges      = "flag-changes"
+	TopicDeliveries       = "deliveries"
+	KafkaGroupEvaluator   = "evaluator-cluster"
+	DefaultKafkaBroker    = "redpanda:9092"
+)
+
+// Distributed Coordination (etcd)
+const (
+	DefaultEtcdEndpoints = "etcd:2379"
+	EtcdPrefixEvaluators = "/members/evaluators/"
+	DefaultEtcdLeaseTTL  = 3
 )
 
 // Error Messages

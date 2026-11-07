@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,6 +19,9 @@ import (
 	"feature-flag-service/internal/mgmt/repository"
 	"feature-flag-service/internal/mgmt/service"
 )
+
+//go:embed web/index.html
+var dashboardHTML []byte
 
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
@@ -65,7 +69,31 @@ func main() {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
+	// Dashboard UI
+	serveDashboard := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(dashboardHTML)
+	}
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" && r.URL.Path != "/dashboard" {
+			http.NotFound(w, r)
+			return
+		}
+		serveDashboard(w, r)
+	})
+	mux.HandleFunc("GET /dashboard", serveDashboard)
+
 	loggingMux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-User, If-Match, Last-Event-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "ETag")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		start := time.Now()
 		mux.ServeHTTP(w, r)
 		log.Printf("[mgmt-api] %s %s from %s in %v", r.Method, r.URL.Path, r.RemoteAddr, time.Since(start))

@@ -713,3 +713,26 @@ func (r *Repository) UpdateSegment(ctx context.Context, envID, key string, req m
 	}
 	return seg, nil
 }
+
+// GetRecentOutbox retrieves the latest outbox events for monitoring and dashboard display
+func (r *Repository) GetRecentOutbox(ctx context.Context, limit int) ([]model.OutboxRecord, error) {
+	if limit <= 0 {
+		limit = constants.DefaultOutboxLimit
+	}
+	query := `SELECT id, env_id, env_version, event_type, payload, created_at FROM outbox ORDER BY id DESC LIMIT $1`
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]model.OutboxRecord, 0)
+	for rows.Next() {
+		var rec model.OutboxRecord
+		if err := rows.Scan(&rec.ID, &rec.EnvID, &rec.EnvVersion, &rec.EventType, &rec.Payload, &rec.CreatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, rec)
+	}
+	return records, nil
+}

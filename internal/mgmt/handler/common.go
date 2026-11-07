@@ -51,6 +51,19 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/environments/{env_id}/segments", h.ListSegments)
 	mux.HandleFunc("GET /api/v1/environments/{env_id}/segments/{segment_key}", h.GetSegment)
 	mux.HandleFunc("PUT /api/v1/environments/{env_id}/segments/{segment_key}", h.UpdateSegment)
+
+	// Outbox & Real-time Stream Monitoring
+	mux.HandleFunc("GET /api/v1/outbox", h.GetRecentOutbox)
+}
+
+func (h *Handler) GetRecentOutbox(w http.ResponseWriter, r *http.Request) {
+	limit := constants.DefaultOutboxLimit
+	records, err := h.svc.GetRecentOutbox(r.Context(), limit)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, records)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

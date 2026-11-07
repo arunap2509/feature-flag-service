@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Distributed Feature Flag Service</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #1f6feb;
+      --success: #238636;
+      --danger: #da3633;
+      --warning: #d29922;
+      --purple: #a371f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 20px; font-size: 14px; }
+    h1, h2, h3 { color: #f0f6fc; font-weight: 600; }
+    a { color: var(--accent); text-decoration: none; }
+    button { cursor: pointer; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); transition: 0.15s; }
+    input, select { background: #0d1117; border: 1px solid var(--border); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 13px; outline: none; }
+    input:focus, select:focus { border-color: var(--accent); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace; }
+    .badge-on { background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid #238636; }
+    .badge-off { background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid #da3633; }
+    .badge-blue { background: rgba(88, 166, 255, 0.15); color: #58a6ff; border: 1px solid #1f6feb; }
+    .badge-purple { background: rgba(163, 113, 247, 0.15); color: #d2a8ff; border: 1px solid #8957e5; }
+    
+    /* Layout */
+    .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+    .pipeline-bar { display: flex; align-items: center; justify-content: space-between; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; margin-bottom: 20px; overflow-x: auto; gap: 8px; }
+    .pipe-node { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px; }
+    .pipe-dot { width: 9px; height: 9px; border-radius: 50%; background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+    .pipe-arrow { color: var(--text-muted); font-weight: bold; }
+    
+    .toolbar { display: flex; gap: 12px; align-items: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .toolbar .group { display: flex; align-items: center; gap: 8px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 20px; margin-bottom: 20px; }
+    @media (max-width: 1000px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    
+    /* Flags list */
+    .flag-card { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .flag-info { display: flex; flex-direction: column; gap: 4px; }
+    .flag-key { font-family: monospace; font-size: 14px; font-weight: 600; color: #f0f6fc; }
+    .flag-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .flag-actions { display: flex; gap: 8px; align-items: center; }
+    
+    .btn-kill { background: rgba(218, 54, 51, 0.2); color: #f85149; border-color: #da3633; font-weight: bold; }
+    .btn-kill:hover { background: #da3633; color: #fff; }
+    .btn-toggle { background: rgba(35, 134, 54, 0.2); color: #3fb950; border-color: #238636; }
+    .btn-toggle:hover { background: #238636; color: #fff; }
+    .btn-primary { background: var(--accent-hover); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent); }
+
+    /* Forms & Modals */
+    .form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+    .form-group label { font-size: 12px; color: var(--text-muted); }
+
+    /* Event stream table */
+    .event-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .event-table th, .event-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+    .event-table th { color: var(--text-muted); font-weight: 500; }
+    .event-table tr:hover { background: #1f242c; }
+
+    .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
+    .modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; width: 440px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>⚡ Real-Time Distributed Feature Flag Service</h1>
+      <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Zero Dual-Write CDC Pipeline • Consistent Hashing • Sub-Microsecond Evaluator</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button onclick="refreshAll()" style="background: var(--card-bg); color: var(--text);">↻ Refresh Now</button>
+    </div>
+  </div>
+
+  <!-- Real-Time Pipeline Status Bar -->
+  <div class="pipeline-bar">
+    <div class="pipe-node"><div class="pipe-dot"></div> Management API (:8081)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> PostgreSQL WAL (:5440)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Outbox CDC Daemon</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Redpanda Kafka (:9092)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> etcd Ring (:2379)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Evaluator (:9001)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Shards (Edge)</div>
+  </div>
+
+  <!-- Tenant & Environment Selector Bar -->
+  <div class="toolbar">
+    <div class="group">
+      <label style="color: var(--text-muted); font-size: 13px;">Tenant:</label>
+      <select id="tenantSelect" onchange="onTenantChange()"></select>
+      <button onclick="openModal('modalTenant')">+ Tenant</button>
+    </div>
+    <div class="group">
+      <label style="color: var(--text-muted); font-size: 13px;">Environment:</label>
+      <select id="envSelect" onchange="onEnvChange()"></select>
+      <button onclick="openModal('modalEnv')">+ Env</button>
+    </div>
+    <div class="group" style="margin-left: auto;">
+      <span class="badge badge-purple" id="envVersionBadge">v?</span>
+      <span class="badge badge-blue" id="envShardBadge">? Shards</span>
+    </div>
+  </div>
+
+  <!-- Main Content Grid -->
+  <div class="grid-2">
+    <!-- Left Column: Feature Flags -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Feature Flags</h3>
+        <button class="btn-primary" onclick="openModal('modalFlag')">+ Create Flag</button>
+      </div>
+      <div id="flagsList">
+        <p style="color: var(--text-muted); text-align: center; padding: 20px;">Loading flags...</p>
+      </div>
+    </div>
+
+    <!-- Right Column: Evaluator & Shard Inspector -->
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <!-- Evaluator Node State -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Evaluator & Hash Ring Inspector</h3>
+          <span class="badge badge-on" id="evaluatorStatusBadge">ONLINE (:9001)</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Node ID:</span>
+            <span id="evalNodeID" style="font-family: monospace;">evaluator-1</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">etcd Cluster Revision:</span>
+            <span id="evalEtcdRev" style="font-family: monospace;">#2</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Active Ring Nodes:</span>
+            <span id="evalNodesList" style="font-family: monospace; color: var(--accent);">["evaluator-1"]</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Owned Shards:</span>
+            <span id="evalOwnedShards" style="font-family: monospace; color: #3fb950;">Shard 0</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Tracked Client Sessions:</span>
+            <span id="evalSessionCount" style="font-family: monospace;">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Client Simulator Sandbox -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Client Evaluation Simulator</h3>
+          <span class="badge badge-blue">&lt; 1µs Target</span>
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <input type="text" id="simUserID" value="usr_alice" placeholder="User ID" style="flex: 1;" />
+          <button class="btn-primary" onclick="simulateEvaluation()">⚡ Evaluate</button>
+          <button onclick="registerSimSession()" style="background: var(--card-bg); color: var(--text);">Stream Connect</button>
+        </div>
+        <div id="simResults" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; min-height: 80px;">
+          Click "Evaluate" to compute flags for this user.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Panel: Live CDC Outbox Event Stream -->
+  <div class="card">
+    <div class="card-header">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <h3>Live PostgreSQL CDC Outbox Event Stream</h3>
+        <span class="badge badge-on">Real-Time WAL Events</span>
+      </div>
+      <span style="color: var(--text-muted); font-size: 12px;" id="outboxCount">Showing latest events</span>
+    </div>
+    <div style="overflow-x: auto;">
+      <table class="event-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Event Type</th>
+            <th>Env ID</th>
+            <th>Env Ver</th>
+            <th>Entity Key</th>
+            <th>Salt</th>
+            <th>Changed By</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody id="outboxTableBody">
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Loading CDC events...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal: Create Tenant -->
+  <div class="modal-backdrop" id="modalTenant">
+    <div class="modal">
+      <h3 style="margin-bottom: 12px;">Create New Tenant</h3>
+      <div class="form-group">
+        <label>Tenant Name</label>
+        <input type="text" id="newTenantName" placeholder="e.g. Acme Global" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button onclick="closeModal('modalTenant')">Cancel</button>
+        <button class="btn-primary" onclick="createTenant()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Environment -->
+  <div class="modal-backdrop" id="modalEnv">
+    <div class="modal">
+      <h3 style="margin-bottom: 12px;">Create New Environment</h3>
+      <div class="form-group">
+        <label>Environment Name</label>
+        <input type="text" id="newEnvName" placeholder="e.g. staging or production" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button onclick="closeModal('modalEnv')">Cancel</button>
+        <button class="btn-primary" onclick="createEnv()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create Flag -->
+  <div class="modal-backdrop" id="modalFlag">
+    <div class="modal">
+      <h3 style="margin-bottom: 12px;">Create New Feature Flag</h3>
+      <div class="form-group">
+        <label>Flag Key (Identifier)</label>
+        <input type="text" id="newFlagKey" placeholder="e.g. checkout_v2" />
+      </div>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="newFlagName" placeholder="e.g. New Checkout Redesign" />
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div class="form-group">
+          <label>Initial State</label>
+          <select id="newFlagState">
+            <option value="on">ON</option>
+            <option value="off" selected>OFF</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Fallback Value</label>
+          <select id="newFlagFallback">
+            <option value="false" selected>false</option>
+            <option value="true">true</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Rollout Percentage (0-100%)</label>
+        <input type="number" id="newFlagRollout" value="100" min="0" max="100" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button onclick="closeModal('modalFlag')">Cancel</button>
+        <button class="btn-primary" onclick="createFlag()">Create Flag</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MGMT_API = window.location.origin;
+    const EVAL_API = "http://" + window.location.hostname + ":9001";
+
+    let currentTenants = [];
+    let currentEnvs = [];
+    let selectedTenantId = "";
+    let selectedEnvId = "";
+
+    async function init() {
+      await loadTenants();
+      setInterval(pollLiveUpdates, 2000);
+    }
+
+    async function loadTenants() {
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/tenants`);
+        currentTenants = await res.json();
+        const select = document.getElementById("tenantSelect");
+        select.innerHTML = "";
+        currentTenants.forEach(t => {
+          const opt = document.createElement("option");
+          opt.value = t.id;
+          opt.textContent = t.name;
+          select.appendChild(opt);
+        });
+        if (currentTenants.length > 0) {
+          selectedTenantId = currentTenants[0].id;
+          await loadEnvs();
+        }
+      } catch (err) {
+        console.error("Failed to load tenants", err);
+      }
+    }
+
+    async function loadEnvs() {
+      if (!selectedTenantId) return;
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/tenants/${selectedTenantId}/environments`);
+        currentEnvs = await res.json();
+        const select = document.getElementById("envSelect");
+        select.innerHTML = "";
+        currentEnvs.forEach(e => {
+          const opt = document.createElement("option");
+          opt.value = e.id;
+          opt.textContent = e.name;
+          select.appendChild(opt);
+        });
+        if (currentEnvs.length > 0) {
+          selectedEnvId = currentEnvs[0].id;
+          updateEnvHeader(currentEnvs[0]);
+          await loadFlags();
+        }
+      } catch (err) {
+        console.error("Failed to load environments", err);
+      }
+    }
+
+    function updateEnvHeader(env) {
+      document.getElementById("envVersionBadge").textContent = `v${env.environment_version}`;
+      document.getElementById("envShardBadge").textContent = `${env.shard_count} Shards`;
+    }
+
+    async function onTenantChange() {
+      selectedTenantId = document.getElementById("tenantSelect").value;
+      await loadEnvs();
+    }
+
+    async function onEnvChange() {
+      selectedEnvId = document.getElementById("envSelect").value;
+      const env = currentEnvs.find(e => e.id === selectedEnvId);
+      if (env) updateEnvHeader(env);
+      await loadFlags();
+    }
+
+    async function loadFlags() {
+      if (!selectedEnvId) return;
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags`);
+        const flags = await res.json();
+        renderFlags(flags);
+      } catch (err) {
+        console.error("Failed to load flags", err);
+      }
+    }
+
+    function renderFlags(flags) {
+      const container = document.getElementById("flagsList");
+      if (!flags || flags.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">No flags created in this environment yet.</p>';
+        return;
+      }
+      container.innerHTML = "";
+      flags.forEach(f => {
+        const card = document.createElement("div");
+        card.className = "flag-card";
+        
+        let rolloutText = "No Rules";
+        if (f.rules && f.rules.length > 0) {
+          const r = f.rules[0];
+          rolloutText = r.rollout_percentage ? `${r.rollout_percentage}% Rollout` : "Custom Rule";
+          if (r.segment) rolloutText += ` (Seg: ${r.segment})`;
+        }
+
+        const isON = f.state === "on";
+        card.innerHTML = `
+          <div class="flag-info">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="flag-key">${f.key}</span>
+              <span class="badge ${isON ? 'badge-on' : 'badge-off'}">${f.state}</span>
+              <span class="badge badge-purple">v${f.version}</span>
+            </div>
+            <div class="flag-meta">
+              <span>Rule: ${rolloutText}</span>
+              <span>•</span>
+              <span>Fallback: ${f.fallback_value}</span>
+              <span>•</span>
+              <span style="font-family: monospace;">Salt: ${f.salt ? f.salt.substring(0,8)+'...' : 'none'}</span>
+            </div>
+          </div>
+          <div class="flag-actions">
+            ${isON ? 
+              `<button class="btn-kill" onclick="killFlag('${f.key}')">🚨 2AM KILL</button>` : 
+              `<button class="btn-toggle" onclick="toggleFlag('${f.key}', ${f.version})">Turn ON</button>`}
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function killFlag(key) {
+      try {
+        await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}/kill`, {
+          method: "POST",
+          headers: { "X-User": "dashboard-oncall" }
+        });
+        await refreshAll();
+      } catch (err) {
+        alert("Failed to kill flag: " + err);
+      }
+    }
+
+    async function toggleFlag(key, currentVer) {
+      try {
+        await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "X-User": "dashboard-admin",
+            "If-Match": `"${currentVer}"`
+          },
+          body: JSON.stringify({
+            state: "on",
+            fallback_value: false,
+            rules: [{ order: 1, value: true, rollout_percentage: 100 }]
+          })
+        });
+        await refreshAll();
+      } catch (err) {
+        alert("Failed to toggle flag: " + err);
+      }
+    }
+
+    async function pollLiveUpdates() {
+      // 1. Evaluator health & cluster state
+      try {
+        const evalRes = await fetch(`${EVAL_API}/healthz`);
+        const evalData = await evalRes.json();
+        document.getElementById("evalNodeID").textContent = evalData.node_id;
+        document.getElementById("evalEtcdRev").textContent = `#${evalData.etcd_revision}`;
+        document.getElementById("evalNodesList").textContent = JSON.stringify(evalData.cluster_nodes);
+        document.getElementById("evalSessionCount").textContent = evalData.total_sessions;
+      } catch (e) {
+        document.getElementById("evaluatorStatusBadge").className = "badge badge-off";
+        document.getElementById("evaluatorStatusBadge").textContent = "OFFLINE";
+      }
+
+      // 2. Outbox CDC events stream
+      try {
+        const outRes = await fetch(`${MGMT_API}/api/v1/outbox`);
+        const events = await outRes.json();
+        renderOutbox(events);
+      } catch (e) {}
+    }
+
+    function renderOutbox(events) {
+      const tbody = document.getElementById("outboxTableBody");
+      if (!events || events.length === 0) return;
+      tbody.innerHTML = "";
+      events.slice(0, 10).forEach(ev => {
+        let p = {};
+        try { p = typeof ev.payload === "string" ? JSON.parse(ev.payload) : ev.payload; } catch(e){}
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style="font-family: monospace;">#${ev.id}</td>
+          <td><span class="badge ${ev.event_type.includes('KILLED') ? 'badge-off' : 'badge-blue'}">${ev.event_type}</span></td>
+          <td style="font-family: monospace; font-size: 11px;">${ev.env_id ? ev.env_id.substring(0, 12)+'...' : ''}</td>
+          <td style="font-weight: 600;">v${ev.env_version}</td>
+          <td style="font-family: monospace; color: var(--accent);">${p.flag_key || p.segment_key || '-'}</td>
+          <td style="font-family: monospace;">${p.salt ? p.salt.substring(0,6)+'...' : '-'}</td>
+          <td>${p.changed_by || '-'}</td>
+          <td style="color: var(--text-muted);">${new Date(ev.created_at).toLocaleTimeString()}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function simulateEvaluation() {
+      const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
+      const start = performance.now();
+      try {
+        const res = await fetch(`${EVAL_API}/api/v1/evaluate/${selectedEnvId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: userID })
+        });
+        const data = await res.json();
+        const duration = (performance.now() - start).toFixed(2);
+        
+        document.getElementById("simResults").innerHTML = `
+          <div style="color: #3fb950; margin-bottom: 6px;">✓ Evaluated in <strong>${duration} ms</strong> (In-Memory Engine)</div>
+          <div style="color: var(--text-muted); margin-bottom: 6px;">Shard: <strong>${data.shard_id}</strong> | Env Version: <strong>v${data.environment_version}</strong></div>
+          <pre style="color: #f0f6fc;">${JSON.stringify(data.flags, null, 2)}</pre>
+        `;
+      } catch (err) {
+        document.getElementById("simResults").innerHTML = `<span style="color: #f85149;">Evaluation Error: ${err}</span>`;
+      }
+    }
+
+    async function registerSimSession() {
+      const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
+      const connID = "conn_" + Math.random().toString(36).substring(2, 9);
+      try {
+        const res = await fetch(`${EVAL_API}/api/v1/sessions/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connection_id: connID,
+            user_id: userID,
+            env_id: selectedEnvId,
+            server_slot: 1
+          })
+        });
+        const data = await res.json();
+        alert(`Connected Stream Session: ${connID} (Shard ${data.shard_id})`);
+        await pollLiveUpdates();
+      } catch (err) {
+        alert("Failed to connect session: " + err);
+      }
+    }
+
+    async function createTenant() {
+      const name = document.getElementById("newTenantName").value.trim();
+      if (!name) return;
+      await fetch(`${MGMT_API}/api/v1/tenants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      closeModal("modalTenant");
+      await loadTenants();
+    }
+
+    async function createEnv() {
+      const name = document.getElementById("newEnvName").value.trim();
+      if (!name) return;
+      await fetch(`${MGMT_API}/api/v1/tenants/${selectedTenantId}/environments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      closeModal("modalEnv");
+      await loadEnvs();
+    }
+
+    async function createFlag() {
+      const key = document.getElementById("newFlagKey").value.trim();
+      const name = document.getElementById("newFlagName").value.trim();
+      const state = document.getElementById("newFlagState").value;
+      const fallback = document.getElementById("newFlagFallback").value === "true";
+      const rollout = parseInt(document.getElementById("newFlagRollout").value, 10);
+      if (!key) return;
+
+      await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-User": "dashboard-creator"
+        },
+        body: JSON.stringify({
+          key,
+          name,
+          state,
+          fallback_value: fallback,
+          rules: [{ order: 1, value: true, rollout_percentage: rollout }]
+        })
+      });
+      closeModal("modalFlag");
+      await refreshAll();
+    }
+
+    async function refreshAll() {
+      if (selectedEnvId) {
+        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}`);
+        const env = await res.json();
+        updateEnvHeader(env);
+      }
+      await loadFlags();
+      await pollLiveUpdates();
+    }
+
+    function openModal(id) { document.getElementById(id).style.display = "flex"; }
+    function closeModal(id) { document.getElementById(id).style.display = "none"; }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
