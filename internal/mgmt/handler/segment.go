@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"feature-flag-service/internal/constants"
@@ -20,6 +21,7 @@ func (h *Handler) CreateSegment(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
+	w.Header().Set(constants.HeaderETag, fmt.Sprintf("\"%d\"", seg.Version))
 	writeJSON(w, http.StatusCreated, seg)
 }
 
@@ -31,6 +33,7 @@ func (h *Handler) GetSegment(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
+	w.Header().Set(constants.HeaderETag, fmt.Sprintf("\"%d\"", seg.Version))
 	writeJSON(w, http.StatusOK, seg)
 }
 
@@ -52,10 +55,12 @@ func (h *Handler) UpdateSegment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, constants.ErrMsgInvalidRequestBody)
 		return
 	}
-	seg, err := h.svc.UpdateSegment(r.Context(), envID, key, req)
+	ifMatch := r.Header.Get(constants.HeaderIfMatch)
+	seg, err := h.svc.UpdateSegment(r.Context(), envID, key, req, ifMatch)
 	if err != nil {
 		h.handleError(w, err)
 		return
 	}
+	w.Header().Set(constants.HeaderETag, fmt.Sprintf("\"%d\"", seg.Version))
 	writeJSON(w, http.StatusOK, seg)
 }

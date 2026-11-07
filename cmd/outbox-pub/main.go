@@ -38,6 +38,18 @@ func loadConfig() Config {
 	}
 }
 
+func sendStatusUpdate(ctx context.Context, conn *pgconn.PgConn, lsn pglogrepl.LSN) error {
+	if lsn == 0 {
+		return nil
+	}
+	return pglogrepl.SendStandbyStatusUpdate(ctx, conn, pglogrepl.StandbyStatusUpdate{
+		WALWritePosition: lsn,
+		WALFlushPosition: lsn, // Crucial: advances confirmed_flush_lsn in PostgreSQL to prevent WAL bloat
+		WALApplyPosition: lsn,
+		ClientTime:       time.Now(),
+	})
+}
+
 func main() {
 	cfg := loadConfig()
 	log.Printf("[%s] Starting Pure Go Log-Based CDC Publisher...", constants.ServiceNameOutboxPub)
@@ -141,11 +153,8 @@ func main() {
 
 		// Send periodic heartbeat to keep replication slot alive
 		if time.Now().After(nextStandbyMessageDeadline) {
-			err = pglogrepl.SendStandbyStatusUpdate(ctx, conn, pglogrepl.StandbyStatusUpdate{
-				WALWritePosition: lastWrittenLSN,
-			})
-			if err != nil {
-				log.Printf("[%s] Failed to send standby status: %v", constants.ServiceNameOutboxPub, err)
+			if err := sendStatusUpdate(ctx, conn, lastWrittenLSN); err != nil {
+				log.Printf("[%s] Failed to send periodic standby status: %v", constants.ServiceNameOutboxPub, err)
 			}
 			nextStandbyMessageDeadline = time.Now().Add(10 * time.Second)
 		}
@@ -184,7 +193,10 @@ func main() {
 				continue
 			}
 			if pkm.ReplyRequested {
-				nextStandbyMessageDeadline = time.Time{} // Force immediate reply
+				if err := sendStatusUpdate(ctx, conn, lastWrittenLSN); err != nil {
+					log.Printf("[%s] Failed to send requested status update: %v", constants.ServiceNameOutboxPub, err)
+				}
+				nextStandbyMessageDeadline = time.Now().Add(10 * time.Second)
 			}
 
 		case pglogrepl.XLogDataByteID:
@@ -240,7 +252,8 @@ func main() {
 					}
 
 					var produceErr error
-					for retries := 0; retries < 5; retries++ {
+					backoff := 200 * time.Millisecond
+					for retries := 0; retries < 10; retries++ {
 						results := kafkaClient.ProduceSync(ctx, record)
 						produceErr = results.FirstErr()
 						if produceErr == nil {
@@ -248,17 +261,26 @@ func main() {
 								constants.ServiceNameOutboxPub, constants.TopicFlagChanges, record.Partition, record.Offset)
 							break
 						}
-						log.Printf("[%s] Kafka produce attempt %d/5 failed: %v", constants.ServiceNameOutboxPub, retries+1, produceErr)
-						time.Sleep(500 * time.Millisecond)
+						log.Printf("[%s] Kafka produce attempt %d/10 failed: %v, retrying in %v...", constants.ServiceNameOutboxPub, retries+1, produceErr, backoff)
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(backoff):
+						}
+						if backoff < 3*time.Second {
+							backoff *= 2
+						}
 					}
 
 					if produceErr != nil {
-						log.Printf("[%s] CRITICAL: Dropping or halting on unpublishable event: %v", constants.ServiceNameOutboxPub, produceErr)
-						continue
+						log.Fatalf("[%s] FATAL: Failed to publish WAL event to Kafka after maximum retries: %v. Halting to prevent data loss.", constants.ServiceNameOutboxPub, produceErr)
 					}
 				}
 
 				lastWrittenLSN = xld.WALStart + pglogrepl.LSN(len(xld.WALData))
+				if err := sendStatusUpdate(ctx, conn, lastWrittenLSN); err != nil {
+					log.Printf("[%s] Failed to flush LSN to Postgres: %v", constants.ServiceNameOutboxPub, err)
+				}
 			}
 		}
 	}

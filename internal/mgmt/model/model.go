@@ -55,18 +55,21 @@ type Segment struct {
 	ID            int64           `json:"id"`
 	EnvironmentID string          `json:"environment_id"`
 	Key           string          `json:"key"`
+	Version       int64           `json:"version"`
 	UserIDs       json.RawMessage `json:"user_ids"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
 type FlagHistory struct {
-	ID        int64           `json:"id"`
-	FlagID    int64           `json:"flag_id"`
-	Version   int64           `json:"version"`
-	State     string          `json:"state"`
-	Rules     json.RawMessage `json:"rules"`
-	ChangedBy string          `json:"changed_by"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID            int64           `json:"id"`
+	FlagID        int64           `json:"flag_id"`
+	Version       int64           `json:"version"`
+	State         string          `json:"state"`
+	Rules         json.RawMessage `json:"rules"`
+	FallbackValue bool            `json:"fallback_value"`
+	Salt          string          `json:"salt"`
+	ChangedBy     string          `json:"changed_by"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 type OutboxRecord struct {
@@ -175,18 +178,20 @@ type SegmentResponse struct {
 	ID            int64           `json:"id"`
 	EnvironmentID string          `json:"environment_id"`
 	Key           string          `json:"key"`
+	Version       int64           `json:"version"`
 	UserIDs       json.RawMessage `json:"user_ids"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
 type FlagHistoryResponse struct {
-	ID        int64           `json:"id"`
-	FlagID    int64           `json:"flag_id"`
-	Version   int64           `json:"version"`
-	State     string          `json:"state"`
-	Rules     json.RawMessage `json:"rules"`
-	ChangedBy string          `json:"changed_by"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID            int64           `json:"id"`
+	FlagID        int64           `json:"flag_id"`
+	Version       int64           `json:"version"`
+	State         string          `json:"state"`
+	Rules         json.RawMessage `json:"rules"`
+	FallbackValue bool            `json:"fallback_value"`
+	ChangedBy     string          `json:"changed_by"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 // ==========================================
@@ -287,6 +292,7 @@ func ToSegmentResponse(s *Segment) *SegmentResponse {
 		ID:            s.ID,
 		EnvironmentID: s.EnvironmentID,
 		Key:           s.Key,
+		Version:       s.Version,
 		UserIDs:       s.UserIDs,
 		UpdatedAt:     s.UpdatedAt,
 	}
@@ -305,13 +311,14 @@ func ToFlagHistoryResponse(h *FlagHistory) *FlagHistoryResponse {
 		return nil
 	}
 	return &FlagHistoryResponse{
-		ID:        h.ID,
-		FlagID:    h.FlagID,
-		Version:   h.Version,
-		State:     h.State,
-		Rules:     h.Rules,
-		ChangedBy: h.ChangedBy,
-		CreatedAt: h.CreatedAt,
+		ID:            h.ID,
+		FlagID:        h.FlagID,
+		Version:       h.Version,
+		State:         h.State,
+		Rules:         h.Rules,
+		FallbackValue: h.FallbackValue,
+		ChangedBy:     h.ChangedBy,
+		CreatedAt:     h.CreatedAt,
 	}
 }
 

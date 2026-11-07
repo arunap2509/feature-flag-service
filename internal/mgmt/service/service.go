@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -24,6 +25,30 @@ func New(repo *repository.Repository) *Service {
 func validateCaller(caller string) error {
 	if strings.TrimSpace(caller) == "" {
 		return errors.New(constants.ErrMsgCallerIdentityRequired)
+	}
+	return nil
+}
+
+func validateRules(rulesJSON []byte) error {
+	if len(rulesJSON) == 0 || string(rulesJSON) == "[]" {
+		return nil
+	}
+	var rules []model.Rule
+	if err := json.Unmarshal(rulesJSON, &rules); err != nil {
+		return fmt.Errorf("%s: %w", constants.ErrMsgInvalidRequestBody, err)
+	}
+	for _, r := range rules {
+		if r.Order <= 0 {
+			return errors.New(constants.ErrMsgInvalidRuleOrder)
+		}
+		if r.RolloutPercentage != nil {
+			if *r.RolloutPercentage < 0 || *r.RolloutPercentage > 100 {
+				return errors.New(constants.ErrMsgInvalidRolloutPct)
+			}
+		}
+		if r.Segment == "" && r.RolloutPercentage == nil {
+			return errors.New(constants.ErrMsgInvalidRuleDefinition)
+		}
 	}
 	return nil
 }
@@ -121,6 +146,9 @@ func (s *Service) CreateFlag(ctx context.Context, envID string, req model.Create
 	if req.State != "" && req.State != constants.FlagStateOn && req.State != constants.FlagStateOff {
 		return nil, errors.New(constants.ErrMsgInvalidFlagState)
 	}
+	if err := validateRules(req.Rules); err != nil {
+		return nil, err
+	}
 	flag, err := s.repo.CreateFlag(ctx, envID, req, changedBy)
 	if err != nil {
 		return nil, err
@@ -161,6 +189,12 @@ func (s *Service) UpdateFlag(ctx context.Context, envID, key string, req model.U
 
 	if req.State != nil && *req.State != constants.FlagStateOn && *req.State != constants.FlagStateOff {
 		return nil, errors.New(constants.ErrMsgInvalidFlagState)
+	}
+
+	if len(req.Rules) > 0 {
+		if err := validateRules(req.Rules); err != nil {
+			return nil, err
+		}
 	}
 
 	flag, err := s.repo.UpdateFlag(ctx, envID, key, req, expectedVersion, changedBy)
@@ -232,8 +266,18 @@ func (s *Service) ListSegments(ctx context.Context, envID string) ([]model.Segme
 	return model.ToSegmentResponses(segs), nil
 }
 
-func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest) (*model.SegmentResponse, error) {
-	seg, err := s.repo.UpdateSegment(ctx, envID, key, req)
+func (s *Service) UpdateSegment(ctx context.Context, envID, key string, req model.UpdateSegmentRequest, ifMatchHeader string) (*model.SegmentResponse, error) {
+	var expectedVersion *int64
+	if ifMatchHeader != "" {
+		clean := strings.Trim(ifMatchHeader, `"`)
+		ver, err := strconv.ParseInt(clean, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", constants.ErrMsgInvalidIfMatch, err)
+		}
+		expectedVersion = &ver
+	}
+
+	seg, err := s.repo.UpdateSegment(ctx, envID, key, req, expectedVersion)
 	if err != nil {
 		return nil, err
 	}

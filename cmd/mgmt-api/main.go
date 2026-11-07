@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -68,9 +71,33 @@ func main() {
 		log.Printf("[mgmt-api] %s %s from %s in %v", r.Method, r.URL.Path, r.RemoteAddr, time.Since(start))
 	})
 
-	serverAddr := fmt.Sprintf(":%s", port)
-	log.Printf("[mgmt-api] Management API Server listening on %s", serverAddr)
-	if err := http.ListenAndServe(serverAddr, loggingMux); err != nil {
-		log.Fatalf("[mgmt-api] Server error: %v", err)
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%s", port),
+		Handler:      loggingMux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		log.Printf("[mgmt-api] Management API Server listening on %s", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[mgmt-api] Server error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Printf("[mgmt-api] Initiating graceful shutdown...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[mgmt-api] Server forced to shutdown: %v", err)
+	} else {
+		log.Printf("[mgmt-api] Server cleanly stopped.")
 	}
 }

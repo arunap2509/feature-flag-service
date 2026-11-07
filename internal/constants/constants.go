@@ -90,4 +90,8 @@ const (
 	ErrMsgTargetVersionPositive   = "target version must be greater than 0"
 	ErrMsgRecordNotFound          = "record not found"
 	ErrMsgVersionMismatch         = "flag version mismatch (please reload)"
+	ErrMsgSegmentVersionMismatch  = "segment version mismatch (please reload)"
+	ErrMsgInvalidRolloutPct       = "rollout_percentage must be between 0 and 100"
+	ErrMsgInvalidRuleOrder        = "rule order must be greater than 0"
+	ErrMsgInvalidRuleDefinition   = "rule must specify either a segment or a rollout percentage"
 )
