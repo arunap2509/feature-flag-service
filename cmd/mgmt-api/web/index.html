@@ -23,9 +23,33 @@
     body { background: var(--bg); color: var(--text); padding: 20px; font-size: 14px; }
     h1, h2, h3 { color: #f0f6fc; font-weight: 600; }
     a { color: var(--accent); text-decoration: none; }
-    button { cursor: pointer; border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); transition: 0.15s; }
-    input, select { background: #0d1117; border: 1px solid var(--border); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 13px; outline: none; }
+    
+    button {
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--text);
+      transition: background 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    button:hover { background: #21262d; border-color: #8b949e; color: #fff; }
+    button:active { transform: translateY(1px); }
+
+    input, select {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
     input:focus, select:focus { border-color: var(--accent); }
+
     .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; font-family: monospace; }
     .badge-on { background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid #238636; }
     .badge-off { background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid #da3633; }
@@ -74,9 +98,17 @@
 
     .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 1000; }
     .modal { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; width: 440px; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    
+    /* Toast alerts */
+    #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+    .toast { padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.5); pointer-events: auto; transition: all 0.25s ease; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
+
+  <!-- Floating Toast Notifications -->
+  <div id="toastContainer"></div>
 
   <!-- Header -->
   <div class="header">
@@ -85,7 +117,7 @@
       <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Zero Dual-Write CDC Pipeline • Consistent Hashing • Sub-Microsecond Evaluator</p>
     </div>
     <div style="display: flex; gap: 10px;">
-      <button onclick="refreshAll()" style="background: var(--card-bg); color: var(--text);">↻ Refresh Now</button>
+      <button type="button" onclick="refreshAll()">↻ Refresh Now</button>
     </div>
   </div>
 
@@ -111,16 +143,16 @@
     <div class="group">
       <label style="color: var(--text-muted); font-size: 13px;">Tenant:</label>
       <select id="tenantSelect" onchange="onTenantChange()"></select>
-      <button onclick="openModal('modalTenant')">+ Tenant</button>
+      <button type="button" onclick="openModal('modalTenant')">+ Tenant</button>
     </div>
     <div class="group">
       <label style="color: var(--text-muted); font-size: 13px;">Environment:</label>
       <select id="envSelect" onchange="onEnvChange()"></select>
-      <button onclick="openModal('modalEnv')">+ Env</button>
+      <button type="button" onclick="openModal('modalEnv')">+ Env</button>
     </div>
     <div class="group" style="margin-left: auto;">
-      <span class="badge badge-purple" id="envVersionBadge">v?</span>
-      <span class="badge badge-blue" id="envShardBadge">? Shards</span>
+      <span class="badge badge-purple" id="envVersionBadge">v0</span>
+      <span class="badge badge-blue" id="envShardBadge">0 Shards</span>
     </div>
   </div>
 
@@ -130,7 +162,7 @@
     <div class="card">
       <div class="card-header">
         <h3>Feature Flags</h3>
-        <button class="btn-primary" onclick="openModal('modalFlag')">+ Create Flag</button>
+        <button type="button" class="btn-primary" onclick="openModal('modalFlag')">+ Create Flag</button>
       </div>
       <div id="flagsList">
         <p style="color: var(--text-muted); text-align: center; padding: 20px;">Loading flags...</p>
@@ -152,7 +184,7 @@
           </div>
           <div style="display: flex; justify-content: space-between;">
             <span style="color: var(--text-muted);">etcd Cluster Revision:</span>
-            <span id="evalEtcdRev" style="font-family: monospace;">#2</span>
+            <span id="evalEtcdRev" style="font-family: monospace;">#0</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
             <span style="color: var(--text-muted);">Active Ring Nodes:</span>
@@ -177,8 +209,8 @@
         </div>
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <input type="text" id="simUserID" value="usr_alice" placeholder="User ID" style="flex: 1;" />
-          <button class="btn-primary" onclick="simulateEvaluation()">⚡ Evaluate</button>
-          <button onclick="registerSimSession()" style="background: var(--card-bg); color: var(--text);">Stream Connect</button>
+          <button type="button" class="btn-primary" onclick="simulateEvaluation()">⚡ Evaluate</button>
+          <button type="button" onclick="registerSimSession()">Stream Connect</button>
         </div>
         <div id="simResults" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; min-height: 80px;">
           Click "Evaluate" to compute flags for this user.
@@ -218,164 +250,262 @@
   </div>
 
   <!-- Modal: Create Tenant -->
-  <div class="modal-backdrop" id="modalTenant">
+  <div class="modal-backdrop" id="modalTenant" onclick="handleBackdropClick(event, 'modalTenant')">
     <div class="modal">
       <h3 style="margin-bottom: 12px;">Create New Tenant</h3>
-      <div class="form-group">
-        <label>Tenant Name</label>
-        <input type="text" id="newTenantName" placeholder="e.g. Acme Global" />
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-        <button onclick="closeModal('modalTenant')">Cancel</button>
-        <button class="btn-primary" onclick="createTenant()">Create</button>
-      </div>
+      <form onsubmit="event.preventDefault(); createTenant();">
+        <div class="form-group">
+          <label for="newTenantName">Tenant Name</label>
+          <input type="text" id="newTenantName" placeholder="e.g. Acme Global" required autocomplete="off" />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" onclick="closeModal('modalTenant')">Cancel</button>
+          <button type="submit" class="btn-primary">Create Tenant</button>
+        </div>
+      </form>
     </div>
   </div>
 
   <!-- Modal: Create Environment -->
-  <div class="modal-backdrop" id="modalEnv">
+  <div class="modal-backdrop" id="modalEnv" onclick="handleBackdropClick(event, 'modalEnv')">
     <div class="modal">
       <h3 style="margin-bottom: 12px;">Create New Environment</h3>
-      <div class="form-group">
-        <label>Environment Name</label>
-        <input type="text" id="newEnvName" placeholder="e.g. staging or production" />
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-        <button onclick="closeModal('modalEnv')">Cancel</button>
-        <button class="btn-primary" onclick="createEnv()">Create</button>
-      </div>
+      <form onsubmit="event.preventDefault(); createEnv();">
+        <div class="form-group">
+          <label for="newEnvName">Environment Name</label>
+          <input type="text" id="newEnvName" placeholder="e.g. staging or production" required autocomplete="off" />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" onclick="closeModal('modalEnv')">Cancel</button>
+          <button type="submit" class="btn-primary">Create Environment</button>
+        </div>
+      </form>
     </div>
   </div>
 
   <!-- Modal: Create Flag -->
-  <div class="modal-backdrop" id="modalFlag">
+  <div class="modal-backdrop" id="modalFlag" onclick="handleBackdropClick(event, 'modalFlag')">
     <div class="modal">
       <h3 style="margin-bottom: 12px;">Create New Feature Flag</h3>
-      <div class="form-group">
-        <label>Flag Key (Identifier)</label>
-        <input type="text" id="newFlagKey" placeholder="e.g. checkout_v2" />
-      </div>
-      <div class="form-group">
-        <label>Name</label>
-        <input type="text" id="newFlagName" placeholder="e.g. New Checkout Redesign" />
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+      <form onsubmit="event.preventDefault(); createFlag();">
         <div class="form-group">
-          <label>Initial State</label>
-          <select id="newFlagState">
-            <option value="on">ON</option>
-            <option value="off" selected>OFF</option>
-          </select>
+          <label for="newFlagKey">Flag Key (Identifier)</label>
+          <input type="text" id="newFlagKey" placeholder="e.g. checkout_v2" required autocomplete="off" />
         </div>
         <div class="form-group">
-          <label>Fallback Value</label>
-          <select id="newFlagFallback">
-            <option value="false" selected>false</option>
-            <option value="true">true</option>
-          </select>
+          <label for="newFlagName">Display Name</label>
+          <input type="text" id="newFlagName" placeholder="e.g. New Checkout Redesign" autocomplete="off" />
         </div>
-      </div>
-      <div class="form-group">
-        <label>Rollout Percentage (0-100%)</label>
-        <input type="number" id="newFlagRollout" value="100" min="0" max="100" />
-      </div>
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-        <button onclick="closeModal('modalFlag')">Cancel</button>
-        <button class="btn-primary" onclick="createFlag()">Create Flag</button>
-      </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="form-group">
+            <label for="newFlagState">Initial State</label>
+            <select id="newFlagState">
+              <option value="on">ON</option>
+              <option value="off" selected>OFF</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="newFlagFallback">Fallback Value</label>
+            <select id="newFlagFallback">
+              <option value="false" selected>false</option>
+              <option value="true">true</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="newFlagRollout">Rollout Percentage (0-100%)</label>
+          <input type="number" id="newFlagRollout" value="100" min="0" max="100" />
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" onclick="closeModal('modalFlag')">Cancel</button>
+          <button type="submit" class="btn-primary">Create Flag</button>
+        </div>
+      </form>
     </div>
   </div>
 
   <script>
-    const MGMT_API = window.location.origin;
-    const EVAL_API = "http://" + window.location.hostname + ":9001";
+    // Ensure API routes point to http://localhost:8081 and :9001 even when index.html is loaded locally via file:///
+    const isHttp = window.location.protocol && window.location.protocol.startsWith("http");
+    const defaultHost = (isHttp && window.location.hostname && window.location.hostname !== "" && window.location.hostname !== "null") ? window.location.hostname : "localhost";
+    const MGMT_API = isHttp ? `${window.location.protocol}//${defaultHost}:${window.location.port || '8081'}` : "http://localhost:8081";
+    const EVAL_API = `http://${defaultHost}:9001`;
 
     let currentTenants = [];
     let currentEnvs = [];
     let selectedTenantId = "";
     let selectedEnvId = "";
 
+    function showToast(message, type = "info") {
+      const container = document.getElementById("toastContainer");
+      if (!container) return;
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      if (type === "success") {
+        toast.style.background = "#238636";
+        toast.style.color = "#fff";
+      } else if (type === "error") {
+        toast.style.background = "#da3633";
+        toast.style.color = "#fff";
+      } else if (type === "warning") {
+        toast.style.background = "#d29922";
+        toast.style.color = "#000";
+      } else {
+        toast.style.background = "#1f6feb";
+        toast.style.color = "#fff";
+      }
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 250);
+      }, 3500);
+    }
+
     async function init() {
       await loadTenants();
+      await pollLiveUpdates();
       setInterval(pollLiveUpdates, 2000);
     }
 
-    async function loadTenants() {
+    async function loadTenants(preferredTenantId = null) {
       try {
         const res = await fetch(`${MGMT_API}/api/v1/tenants`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         currentTenants = await res.json();
         const select = document.getElementById("tenantSelect");
         select.innerHTML = "";
+
+        if (!currentTenants || currentTenants.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No tenants (Click + Tenant)";
+          select.appendChild(opt);
+          selectedTenantId = "";
+          await loadEnvs();
+          return;
+        }
+
         currentTenants.forEach(t => {
           const opt = document.createElement("option");
           opt.value = t.id;
           opt.textContent = t.name;
           select.appendChild(opt);
         });
-        if (currentTenants.length > 0) {
+
+        if (preferredTenantId && currentTenants.some(t => t.id === preferredTenantId)) {
+          selectedTenantId = preferredTenantId;
+        } else if (!selectedTenantId || !currentTenants.some(t => t.id === selectedTenantId)) {
           selectedTenantId = currentTenants[0].id;
-          await loadEnvs();
         }
+
+        select.value = selectedTenantId;
+        await loadEnvs();
       } catch (err) {
         console.error("Failed to load tenants", err);
+        showToast("Failed to load tenants: " + err.message, "error");
       }
     }
 
-    async function loadEnvs() {
-      if (!selectedTenantId) return;
+    async function loadEnvs(preferredEnvId = null) {
+      const select = document.getElementById("envSelect");
+      select.innerHTML = "";
+
+      if (!selectedTenantId || String(selectedTenantId).trim() === "") {
+        currentEnvs = [];
+        selectedEnvId = "";
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No environments (Select Tenant)";
+        select.appendChild(opt);
+        updateEnvHeader(null);
+        await loadFlags();
+        return;
+      }
+
       try {
         const res = await fetch(`${MGMT_API}/api/v1/tenants/${selectedTenantId}/environments`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         currentEnvs = await res.json();
-        const select = document.getElementById("envSelect");
-        select.innerHTML = "";
+
+        if (!currentEnvs || currentEnvs.length === 0) {
+          selectedEnvId = "";
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No environments (Click + Env)";
+          select.appendChild(opt);
+          updateEnvHeader(null);
+          await loadFlags();
+          return;
+        }
+
         currentEnvs.forEach(e => {
           const opt = document.createElement("option");
           opt.value = e.id;
           opt.textContent = e.name;
           select.appendChild(opt);
         });
-        if (currentEnvs.length > 0) {
+
+        if (preferredEnvId && currentEnvs.some(e => e.id === preferredEnvId)) {
+          selectedEnvId = preferredEnvId;
+        } else if (!selectedEnvId || !currentEnvs.some(e => e.id === selectedEnvId)) {
           selectedEnvId = currentEnvs[0].id;
-          updateEnvHeader(currentEnvs[0]);
-          await loadFlags();
         }
+
+        select.value = selectedEnvId;
+        const activeEnv = currentEnvs.find(e => e.id === selectedEnvId);
+        updateEnvHeader(activeEnv);
+        await loadFlags();
       } catch (err) {
         console.error("Failed to load environments", err);
+        showToast("Failed to load environments: " + err.message, "error");
       }
     }
 
     function updateEnvHeader(env) {
-      document.getElementById("envVersionBadge").textContent = `v${env.environment_version}`;
-      document.getElementById("envShardBadge").textContent = `${env.shard_count} Shards`;
+      if (env) {
+        document.getElementById("envVersionBadge").textContent = `v${env.environment_version}`;
+        document.getElementById("envShardBadge").textContent = `${env.shard_count} Shards`;
+      } else {
+        document.getElementById("envVersionBadge").textContent = "v0";
+        document.getElementById("envShardBadge").textContent = "0 Shards";
+      }
     }
 
     async function onTenantChange() {
       selectedTenantId = document.getElementById("tenantSelect").value;
+      selectedEnvId = "";
       await loadEnvs();
     }
 
     async function onEnvChange() {
       selectedEnvId = document.getElementById("envSelect").value;
       const env = currentEnvs.find(e => e.id === selectedEnvId);
-      if (env) updateEnvHeader(env);
+      updateEnvHeader(env);
       await loadFlags();
     }
 
     async function loadFlags() {
-      if (!selectedEnvId) return;
+      const container = document.getElementById("flagsList");
+      if (!selectedEnvId) {
+        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">No environment selected. Create an environment with <strong>+ Env</strong> above.</p>';
+        return;
+      }
       try {
         const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const flags = await res.json();
         renderFlags(flags);
       } catch (err) {
         console.error("Failed to load flags", err);
+        container.innerHTML = `<p style="color: var(--danger); text-align: center; padding: 20px;">Failed to load flags: ${err.message}</p>`;
       }
     }
 
     function renderFlags(flags) {
       const container = document.getElementById("flagsList");
       if (!flags || flags.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">No flags created in this environment yet.</p>';
+        container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 20px;">No flags created in this environment yet. Click <strong>+ Create Flag</strong> above.</p>';
         return;
       }
       container.innerHTML = "";
@@ -386,7 +516,7 @@
         let rolloutText = "No Rules";
         if (f.rules && f.rules.length > 0) {
           const r = f.rules[0];
-          rolloutText = r.rollout_percentage ? `${r.rollout_percentage}% Rollout` : "Custom Rule";
+          rolloutText = r.rollout_percentage !== undefined ? `${r.rollout_percentage}% Rollout` : "Custom Rule";
           if (r.segment) rolloutText += ` (Seg: ${r.segment})`;
         }
 
@@ -403,13 +533,13 @@
               <span>•</span>
               <span>Fallback: ${f.fallback_value}</span>
               <span>•</span>
-              <span style="font-family: monospace;">Salt: ${f.salt ? f.salt.substring(0,8)+'...' : 'none'}</span>
+              <span style="font-family: monospace;">Salt: ${f.salt ? String(f.salt).substring(0,8)+'...' : 'none'}</span>
             </div>
           </div>
           <div class="flag-actions">
             ${isON ? 
-              `<button class="btn-kill" onclick="killFlag('${f.key}')">🚨 2AM KILL</button>` : 
-              `<button class="btn-toggle" onclick="toggleFlag('${f.key}', ${f.version})">Turn ON</button>`}
+              `<button type="button" class="btn-kill" onclick="killFlag('${f.key}')">🚨 2AM KILL</button>` : 
+              `<button type="button" class="btn-toggle" onclick="toggleFlag('${f.key}', ${f.version})">Turn ON</button>`}
           </div>
         `;
         container.appendChild(card);
@@ -417,20 +547,23 @@
     }
 
     async function killFlag(key) {
+      if (!confirm(`Are you sure you want to trigger 2AM KILL for flag '${key}'?`)) return;
       try {
-        await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}/kill`, {
+        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}/kill`, {
           method: "POST",
           headers: { "X-User": "dashboard-oncall" }
         });
+        if (!res.ok) throw new Error(await res.text());
+        showToast(`🚨 Flag '${key}' KILLED! Instant CDC stream propagation.`, "warning");
         await refreshAll();
       } catch (err) {
-        alert("Failed to kill flag: " + err);
+        showToast("Failed to kill flag: " + err.message, "error");
       }
     }
 
     async function toggleFlag(key, currentVer) {
       try {
-        await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}`, {
+        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags/${key}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -443,9 +576,11 @@
             rules: [{ order: 1, value: true, rollout_percentage: 100 }]
           })
         });
+        if (!res.ok) throw new Error(await res.text());
+        showToast(`Flag '${key}' turned ON!`, "success");
         await refreshAll();
       } catch (err) {
-        alert("Failed to toggle flag: " + err);
+        showToast("Failed to toggle flag: " + err.message, "error");
       }
     }
 
@@ -453,11 +588,17 @@
       // 1. Evaluator health & cluster state
       try {
         const evalRes = await fetch(`${EVAL_API}/healthz`);
-        const evalData = await evalRes.json();
-        document.getElementById("evalNodeID").textContent = evalData.node_id;
-        document.getElementById("evalEtcdRev").textContent = `#${evalData.etcd_revision}`;
-        document.getElementById("evalNodesList").textContent = JSON.stringify(evalData.cluster_nodes);
-        document.getElementById("evalSessionCount").textContent = evalData.total_sessions;
+        if (evalRes.ok) {
+          const evalData = await evalRes.json();
+          document.getElementById("evaluatorStatusBadge").className = "badge badge-on";
+          document.getElementById("evaluatorStatusBadge").textContent = "ONLINE (:9001)";
+          document.getElementById("evalNodeID").textContent = evalData.node_id || "-";
+          document.getElementById("evalEtcdRev").textContent = `#${evalData.etcd_revision || 0}`;
+          document.getElementById("evalNodesList").textContent = JSON.stringify(evalData.cluster_nodes || []);
+          document.getElementById("evalSessionCount").textContent = evalData.total_sessions || 0;
+        } else {
+          throw new Error(`HTTP ${evalRes.status}`);
+        }
       } catch (e) {
         document.getElementById("evaluatorStatusBadge").className = "badge badge-off";
         document.getElementById("evaluatorStatusBadge").textContent = "OFFLINE";
@@ -466,34 +607,52 @@
       // 2. Outbox CDC events stream
       try {
         const outRes = await fetch(`${MGMT_API}/api/v1/outbox`);
-        const events = await outRes.json();
-        renderOutbox(events);
+        if (outRes.ok) {
+          const events = await outRes.json();
+          renderOutbox(events);
+        }
       } catch (e) {}
     }
 
     function renderOutbox(events) {
       const tbody = document.getElementById("outboxTableBody");
-      if (!events || events.length === 0) return;
+      if (!tbody) return;
+      if (!events || events.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No CDC events logged yet.</td></tr>';
+        return;
+      }
       tbody.innerHTML = "";
       events.slice(0, 10).forEach(ev => {
         let p = {};
-        try { p = typeof ev.payload === "string" ? JSON.parse(ev.payload) : ev.payload; } catch(e){}
+        if (ev && ev.payload) {
+          if (typeof ev.payload === "object") {
+            p = ev.payload;
+          } else if (typeof ev.payload === "string") {
+            try { p = JSON.parse(ev.payload); } catch(e) {}
+          }
+        }
+        const eventType = String(ev.event_type || "UNKNOWN");
+        const isKill = eventType.includes("KILLED");
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="font-family: monospace;">#${ev.id}</td>
-          <td><span class="badge ${ev.event_type.includes('KILLED') ? 'badge-off' : 'badge-blue'}">${ev.event_type}</span></td>
-          <td style="font-family: monospace; font-size: 11px;">${ev.env_id ? ev.env_id.substring(0, 12)+'...' : ''}</td>
-          <td style="font-weight: 600;">v${ev.env_version}</td>
+          <td style="font-family: monospace;">#${ev.id || '-'}</td>
+          <td><span class="badge ${isKill ? 'badge-off' : 'badge-blue'}">${eventType}</span></td>
+          <td style="font-family: monospace; font-size: 11px;">${ev.env_id ? String(ev.env_id).substring(0, 12)+'...' : '-'}</td>
+          <td style="font-weight: 600;">v${ev.env_version !== undefined ? ev.env_version : '-'}</td>
           <td style="font-family: monospace; color: var(--accent);">${p.flag_key || p.segment_key || '-'}</td>
-          <td style="font-family: monospace;">${p.salt ? p.salt.substring(0,6)+'...' : '-'}</td>
+          <td style="font-family: monospace;">${p.salt ? String(p.salt).substring(0,6)+'...' : '-'}</td>
           <td>${p.changed_by || '-'}</td>
-          <td style="color: var(--text-muted);">${new Date(ev.created_at).toLocaleTimeString()}</td>
+          <td style="color: var(--text-muted);">${ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : '-'}</td>
         `;
         tbody.appendChild(tr);
       });
     }
 
     async function simulateEvaluation() {
+      if (!selectedEnvId) {
+        document.getElementById("simResults").innerHTML = `<span style="color: #f85149;">Please select or create an environment first.</span>`;
+        return;
+      }
       const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
       const start = performance.now();
       try {
@@ -502,20 +661,25 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ user_id: userID })
         });
+        if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
         const duration = (performance.now() - start).toFixed(2);
         
         document.getElementById("simResults").innerHTML = `
           <div style="color: #3fb950; margin-bottom: 6px;">✓ Evaluated in <strong>${duration} ms</strong> (In-Memory Engine)</div>
           <div style="color: var(--text-muted); margin-bottom: 6px;">Shard: <strong>${data.shard_id}</strong> | Env Version: <strong>v${data.environment_version}</strong></div>
-          <pre style="color: #f0f6fc;">${JSON.stringify(data.flags, null, 2)}</pre>
+          <pre style="color: #f0f6fc; margin: 0;">${JSON.stringify(data.flags, null, 2)}</pre>
         `;
       } catch (err) {
-        document.getElementById("simResults").innerHTML = `<span style="color: #f85149;">Evaluation Error: ${err}</span>`;
+        document.getElementById("simResults").innerHTML = `<span style="color: #f85149;">Evaluation Error: ${err.message}</span>`;
       }
     }
 
     async function registerSimSession() {
+      if (!selectedEnvId) {
+        showToast("Please select or create an environment first", "error");
+        return;
+      }
       const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
       const connID = "conn_" + Math.random().toString(36).substring(2, 9);
       try {
@@ -529,76 +693,162 @@
             server_slot: 1
           })
         });
+        if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        alert(`Connected Stream Session: ${connID} (Shard ${data.shard_id})`);
+        showToast(`✓ Stream Connected: ${connID} (Shard ${data.shard_id})`, "success");
         await pollLiveUpdates();
       } catch (err) {
-        alert("Failed to connect session: " + err);
+        showToast("Failed to connect session: " + err.message, "error");
       }
     }
 
     async function createTenant() {
-      const name = document.getElementById("newTenantName").value.trim();
-      if (!name) return;
-      await fetch(`${MGMT_API}/api/v1/tenants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
-      });
-      closeModal("modalTenant");
-      await loadTenants();
+      const input = document.getElementById("newTenantName");
+      const name = input.value.trim();
+      if (!name) {
+        showToast("Tenant name cannot be empty", "error");
+        return;
+      }
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/tenants`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          showToast("Error creating tenant: " + errText, "error");
+          return;
+        }
+        const created = await res.json();
+        input.value = "";
+        closeModal("modalTenant");
+        showToast(`Tenant '${created.name}' created!`, "success");
+        await loadTenants(created.id);
+      } catch (err) {
+        showToast("Network error creating tenant: " + err.message, "error");
+      }
     }
 
     async function createEnv() {
-      const name = document.getElementById("newEnvName").value.trim();
-      if (!name) return;
-      await fetch(`${MGMT_API}/api/v1/tenants/${selectedTenantId}/environments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name })
-      });
-      closeModal("modalEnv");
-      await loadEnvs();
+      if (!selectedTenantId) {
+        showToast("Please select or create a tenant first", "error");
+        return;
+      }
+      const input = document.getElementById("newEnvName");
+      const name = input.value.trim();
+      if (!name) {
+        showToast("Environment name cannot be empty", "error");
+        return;
+      }
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/tenants/${selectedTenantId}/environments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          showToast("Error creating environment: " + errText, "error");
+          return;
+        }
+        const created = await res.json();
+        input.value = "";
+        closeModal("modalEnv");
+        showToast(`Environment '${created.name}' created!`, "success");
+        await loadEnvs(created.id);
+      } catch (err) {
+        showToast("Network error creating environment: " + err.message, "error");
+      }
     }
 
     async function createFlag() {
-      const key = document.getElementById("newFlagKey").value.trim();
-      const name = document.getElementById("newFlagName").value.trim();
+      if (!selectedEnvId) {
+        showToast("Please select or create an environment first", "error");
+        return;
+      }
+      const keyInput = document.getElementById("newFlagKey");
+      const nameInput = document.getElementById("newFlagName");
+      const key = keyInput.value.trim();
+      const name = nameInput.value.trim();
       const state = document.getElementById("newFlagState").value;
       const fallback = document.getElementById("newFlagFallback").value === "true";
       const rollout = parseInt(document.getElementById("newFlagRollout").value, 10);
-      if (!key) return;
-
-      await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User": "dashboard-creator"
-        },
-        body: JSON.stringify({
-          key,
-          name,
-          state,
-          fallback_value: fallback,
-          rules: [{ order: 1, value: true, rollout_percentage: rollout }]
-        })
-      });
-      closeModal("modalFlag");
-      await refreshAll();
+      if (!key) {
+        showToast("Flag Key is required", "error");
+        return;
+      }
+      try {
+        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}/flags`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-User": "dashboard-creator"
+          },
+          body: JSON.stringify({
+            key,
+            name: name || key,
+            state,
+            fallback_value: fallback,
+            rules: [{ order: 1, value: true, rollout_percentage: rollout }]
+          })
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          showToast("Error creating flag: " + errText, "error");
+          return;
+        }
+        keyInput.value = "";
+        nameInput.value = "";
+        closeModal("modalFlag");
+        showToast(`Flag '${key}' created!`, "success");
+        await refreshAll();
+      } catch (err) {
+        showToast("Network error creating flag: " + err.message, "error");
+      }
     }
 
     async function refreshAll() {
       if (selectedEnvId) {
-        const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}`);
-        const env = await res.json();
-        updateEnvHeader(env);
+        try {
+          const res = await fetch(`${MGMT_API}/api/v1/environments/${selectedEnvId}`);
+          if (res.ok) {
+            const env = await res.json();
+            updateEnvHeader(env);
+          }
+        } catch (e) {}
       }
       await loadFlags();
       await pollLiveUpdates();
     }
 
-    function openModal(id) { document.getElementById(id).style.display = "flex"; }
-    function closeModal(id) { document.getElementById(id).style.display = "none"; }
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.display = "flex";
+        const input = el.querySelector("input");
+        if (input) {
+          setTimeout(() => input.focus(), 50);
+        }
+      }
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    }
+
+    function handleBackdropClick(event, id) {
+      if (event.target.id === id) {
+        closeModal(id);
+      }
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        ['modalTenant', 'modalEnv', 'modalFlag'].forEach(closeModal);
+      }
+    });
 
     window.onload = init;
   </script>
