@@ -210,7 +210,7 @@
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <input type="text" id="simUserID" value="usr_alice" placeholder="User ID" style="flex: 1;" />
           <button type="button" class="btn-primary" onclick="simulateEvaluation()">⚡ Evaluate</button>
-          <button type="button" onclick="registerSimSession()">Stream Connect</button>
+          <button type="button" id="btnStream" onclick="toggleStreamSession()">Stream Connect</button>
         </div>
         <div id="simResults" style="background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; min-height: 80px;">
           Click "Evaluate" to compute flags for this user.
@@ -675,31 +675,92 @@
       }
     }
 
-    async function registerSimSession() {
+    let activeEventSource = null;
+    let streamFlags = {};
+
+    function toggleStreamSession() {
+      if (activeEventSource) {
+        activeEventSource.close();
+        activeEventSource = null;
+        const btn = document.getElementById("btnStream");
+        btn.textContent = "Stream Connect";
+        btn.style.borderColor = "var(--border)";
+        btn.style.color = "var(--text)";
+        showToast("Stream disconnected", "info");
+        document.getElementById("simResults").innerHTML = `Stream disconnected. Click "Stream Connect" or "Evaluate".`;
+        pollLiveUpdates();
+        return;
+      }
+
       if (!selectedEnvId) {
         showToast("Please select or create an environment first", "error");
         return;
       }
+
       const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
       const connID = "conn_" + Math.random().toString(36).substring(2, 9);
-      try {
-        const res = await fetch(`${EVAL_API}/api/v1/sessions/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connection_id: connID,
-            user_id: userID,
-            env_id: selectedEnvId,
-            server_slot: 1
-          })
-        });
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        showToast(`✓ Stream Connected: ${connID} (Shard ${data.shard_id})`, "success");
-        await pollLiveUpdates();
-      } catch (err) {
-        showToast("Failed to connect session: " + err.message, "error");
-      }
+      const url = `${EVAL_API}/api/v1/sessions/stream?user_id=${encodeURIComponent(userID)}&env_id=${encodeURIComponent(selectedEnvId)}&conn_id=${encodeURIComponent(connID)}`;
+
+      showToast(`Connecting live SSE stream for ${userID}...`, "info");
+      document.getElementById("simResults").innerHTML = `<div style="color: var(--accent);">Connecting to real-time SSE stream...</div>`;
+
+      activeEventSource = new EventSource(url);
+
+      activeEventSource.addEventListener("put", (e) => {
+        const data = JSON.parse(e.data);
+        streamFlags = data.flags || {};
+        const btn = document.getElementById("btnStream");
+        btn.textContent = "Disconnect Stream";
+        btn.style.borderColor = "#238636";
+        btn.style.color = "#3fb950";
+        showToast(`✓ Live SSE Connected: ${data.connection_id} (Shard ${data.shard_id})`, "success");
+        renderStreamView(data, "Initial Snapshot (PUT)");
+        pollLiveUpdates();
+      });
+
+      activeEventSource.addEventListener("patch", (e) => {
+        const patch = JSON.parse(e.data);
+        if (patch.changes) {
+          Object.assign(streamFlags, patch.changes);
+        }
+        showToast(`⚡ Real-Time Push Patch received for v${patch.environment_version}!`, "warning");
+        renderStreamView({
+          connection_id: patch.connection_id,
+          shard_id: document.getElementById("streamShard") ? document.getElementById("streamShard").textContent : "?",
+          environment_version: patch.environment_version,
+          flags: streamFlags
+        }, `Live CDC Diff Push (PATCH v${patch.environment_version})`);
+        pollLiveUpdates();
+      });
+
+      activeEventSource.onerror = (err) => {
+        console.error("SSE stream error:", err);
+        showToast("SSE connection disconnected or closed", "error");
+        if (activeEventSource) {
+          activeEventSource.close();
+          activeEventSource = null;
+        }
+        const btn = document.getElementById("btnStream");
+        btn.textContent = "Stream Connect";
+        btn.style.borderColor = "var(--border)";
+        btn.style.color = "var(--text)";
+        pollLiveUpdates();
+      };
+    }
+
+    function renderStreamView(data, eventTypeLabel) {
+      document.getElementById("simResults").innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="color: #3fb950; font-weight: bold;">🟢 LIVE SSE STREAM ACTIVE</span>
+          <span class="badge badge-purple">${eventTypeLabel}</span>
+        </div>
+        <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 6px;">
+          Conn: <span style="font-family: monospace; color: #fff;">${data.connection_id}</span> | 
+          Shard: <span id="streamShard" style="font-family: monospace; color: var(--accent);">${data.shard_id !== undefined ? data.shard_id : '0'}</span> | 
+          Env Version: <strong>v${data.environment_version}</strong>
+        </div>
+        <pre style="color: #58a6ff; margin: 0; background: #070a0e; padding: 8px; border-radius: 4px;">${JSON.stringify(data.flags, null, 2)}</pre>
+      `;
     }
 
     async function createTenant() {

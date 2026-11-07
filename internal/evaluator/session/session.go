@@ -15,6 +15,7 @@ type ClientSession struct {
 	ServerSlot   int               `json:"server_slot"`
 	Attributes   map[string]string `json:"attributes,omitempty"`
 	LastAnswers  map[string]bool   `json:"last_answers"`
+	PatchChan    chan DiffPatch    `json:"-"`
 }
 
 // DiffPatch represents a delta update pushed to an affected client connection
@@ -122,7 +123,7 @@ func (r *Registry) ReevaluateShard(
 				sess.LastAnswers = make(map[string]bool)
 			}
 			sess.LastAnswers[flagKey] = newVal
-			patches = append(patches, DiffPatch{
+			patch := DiffPatch{
 				ConnectionID: sess.ConnectionID,
 				ServerSlot:   sess.ServerSlot,
 				EnvID:        envID,
@@ -130,7 +131,14 @@ func (r *Registry) ReevaluateShard(
 				Changes: map[string]bool{
 					flagKey: newVal,
 				},
-			})
+			}
+			patches = append(patches, patch)
+			if sess.PatchChan != nil {
+				select {
+				case sess.PatchChan <- patch:
+				default:
+				}
+			}
 		}
 	}
 

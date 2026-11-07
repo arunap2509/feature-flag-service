@@ -260,6 +260,80 @@ func main() {
 		})
 	})
 
+	// Live SSE Stream endpoint (used by Web UI simulator or Connection Servers)
+	mux.HandleFunc("GET /api/v1/sessions/stream", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		envID := r.URL.Query().Get("env_id")
+		userID := r.URL.Query().Get("user_id")
+		if userID == "" {
+			userID = "usr_alice"
+		}
+		connID := r.URL.Query().Get("conn_id")
+		if connID == "" {
+			connID = fmt.Sprintf("conn_%d", time.Now().UnixNano()%1000000)
+		}
+
+		shardID := engine.ComputeShard(userID, cfg.ShardCount)
+		flags, segments, envVer := rulesStore.GetEnvironmentData(envID)
+		initialAnswers := engine.EvaluateAll(flags, segments, engine.UserContext{
+			UserID: userID,
+		})
+
+		patchChan := make(chan session.DiffPatch, 32)
+		sess := &session.ClientSession{
+			ConnectionID: connID,
+			UserID:       userID,
+			ShardID:      shardID,
+			EnvID:        envID,
+			ServerSlot:   1,
+			LastAnswers:  initialAnswers,
+			PatchChan:    patchChan,
+		}
+
+		sessionRegistry.Register(sess)
+		defer sessionRegistry.Deregister(envID, shardID, connID)
+
+		// Push initial PUT frame
+		initPayload, _ := json.Marshal(map[string]any{
+			"type":                "put",
+			"connection_id":       connID,
+			"user_id":             userID,
+			"shard_id":            shardID,
+			"environment_version": envVer,
+			"flags":               initialAnswers,
+		})
+		_, _ = fmt.Fprintf(w, "event: put\ndata: %s\n\n", initPayload)
+		flusher.Flush()
+
+		// Stream patches until client disconnects
+		ctx := r.Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case patch := <-patchChan:
+				patchPayload, _ := json.Marshal(map[string]any{
+					"type":                "patch",
+					"connection_id":       patch.ConnectionID,
+					"environment_version": patch.EnvVersion,
+					"changes":             patch.Changes,
+				})
+				_, _ = fmt.Fprintf(w, "event: patch\ndata: %s\n\n", patchPayload)
+				flusher.Flush()
+			}
+		}
+	})
+
 	corsMux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
