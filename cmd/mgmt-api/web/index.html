@@ -719,32 +719,36 @@
       });
 
       activeEventSource.addEventListener("patch", (e) => {
-        const patch = JSON.parse(e.data);
-        if (patch.changes) {
-          Object.assign(streamFlags, patch.changes);
+        try {
+          const patch = JSON.parse(e.data);
+          if (patch.changes) {
+            Object.assign(streamFlags, patch.changes);
+          }
+          showToast(`⚡ Real-Time Push Patch received for v${patch.environment_version}!`, "warning");
+          renderStreamView({
+            connection_id: patch.connection_id,
+            shard_id: document.getElementById("streamShard") ? document.getElementById("streamShard").textContent : "0",
+            environment_version: patch.environment_version,
+            flags: streamFlags
+          }, `Live CDC Diff Push (PATCH v${patch.environment_version})`);
+          pollLiveUpdates();
+        } catch (err) {
+          console.error("Error processing patch frame:", err);
         }
-        showToast(`⚡ Real-Time Push Patch received for v${patch.environment_version}!`, "warning");
-        renderStreamView({
-          connection_id: patch.connection_id,
-          shard_id: document.getElementById("streamShard") ? document.getElementById("streamShard").textContent : "?",
-          environment_version: patch.environment_version,
-          flags: streamFlags
-        }, `Live CDC Diff Push (PATCH v${patch.environment_version})`);
-        pollLiveUpdates();
       });
 
       activeEventSource.onerror = (err) => {
-        console.error("SSE stream error:", err);
-        showToast("SSE connection disconnected or closed", "error");
-        if (activeEventSource) {
+        console.warn("SSE stream state:", activeEventSource ? activeEventSource.readyState : "null");
+        if (activeEventSource && activeEventSource.readyState === EventSource.CLOSED) {
           activeEventSource.close();
           activeEventSource = null;
+          const btn = document.getElementById("btnStream");
+          btn.textContent = "Stream Connect";
+          btn.style.borderColor = "var(--border)";
+          btn.style.color = "var(--text)";
+          showToast("SSE connection closed", "info");
+          pollLiveUpdates();
         }
-        const btn = document.getElementById("btnStream");
-        btn.textContent = "Stream Connect";
-        btn.style.borderColor = "var(--border)";
-        btn.style.color = "var(--text)";
-        pollLiveUpdates();
       };
     }
 

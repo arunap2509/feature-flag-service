@@ -268,6 +268,10 @@ func main() {
 			return
 		}
 
+		// Disable response write timeout for long-lived SSE streaming
+		rc := http.NewResponseController(w)
+		_ = rc.SetWriteDeadline(time.Time{})
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -315,12 +319,21 @@ func main() {
 		_, _ = fmt.Fprintf(w, "event: put\ndata: %s\n\n", initPayload)
 		flusher.Flush()
 
+		// Periodic keep-alive ping ticker
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
 		// Stream patches until client disconnects
 		ctx := r.Context()
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+					return
+				}
+				flusher.Flush()
 			case patch := <-patchChan:
 				patchPayload, _ := json.Marshal(map[string]any{
 					"type":                "patch",
@@ -328,7 +341,9 @@ func main() {
 					"environment_version": patch.EnvVersion,
 					"changes":             patch.Changes,
 				})
-				_, _ = fmt.Fprintf(w, "event: patch\ndata: %s\n\n", patchPayload)
+				if _, err := fmt.Fprintf(w, "event: patch\ndata: %s\n\n", patchPayload); err != nil {
+					return
+				}
 				flusher.Flush()
 			}
 		}
@@ -346,11 +361,10 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
-		Handler:      corsMux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           corsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
