@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"feature-flag-service/internal/constants"
 	"feature-flag-service/internal/evaluator/cache"
 	"feature-flag-service/internal/evaluator/cluster"
+	"feature-flag-service/internal/evaluator/contextstore"
 	"feature-flag-service/internal/evaluator/engine"
 	"feature-flag-service/internal/evaluator/ring"
 	"feature-flag-service/internal/evaluator/session"
@@ -34,6 +36,7 @@ type Config struct {
 	KafkaDeliveriesBroker string
 	EtcdEndpoints         []string
 	DatabaseURL           string
+	RedisAddr             string
 	ShardCount            int
 }
 
@@ -66,6 +69,10 @@ func loadConfig() Config {
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
 	}
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = constants.DefaultRedisAddr
+	}
 	shardCount := constants.DefaultShardCount
 	if scStr := os.Getenv("SHARD_COUNT"); scStr != "" {
 		if sc, err := strconv.Atoi(scStr); err == nil && sc > 0 {
@@ -81,6 +88,7 @@ func loadConfig() Config {
 		KafkaDeliveriesBroker: delivBroker,
 		EtcdEndpoints:         strings.Split(etcdEp, ","),
 		DatabaseURL:           dbURL,
+		RedisAddr:             redisAddr,
 		ShardCount:            shardCount,
 	}
 }
@@ -116,17 +124,83 @@ func main() {
 		_ = db.Close()
 	}
 
-	// 3. Connect to etcd and join cluster ring
+	// 3. Connect to Redis Context Store
+	contextStore, err := contextstore.NewStore(cfg.RedisAddr)
+	if err != nil {
+		log.Printf("[%s] Warning: Redis context store connection failed (%s): %v",
+			constants.ServiceNameEvaluator, cfg.RedisAddr, err)
+	} else {
+		defer contextStore.Close()
+		log.Printf("[%s] Connected to Redis Context Store at %s",
+			constants.ServiceNameEvaluator, cfg.RedisAddr)
+	}
+
+	// 4. Connect to etcd and join cluster ring
 	coordinator, err := cluster.NewCoordinator(cfg.EtcdEndpoints, cfg.NodeID, cfg.NodeAddr, hashRing, constants.DefaultEtcdLeaseTTL)
 	if err != nil {
 		log.Fatalf("[%s] Failed to initialize etcd coordinator: %v", constants.ServiceNameEvaluator, err)
 	}
+
+	// 5. Failover Ring Watcher: Detect adopted shards and recover session contexts from Redis
+	var ownedMu sync.Mutex
+	lastOwnedShards := make(map[string]map[int]struct{})
+
+	coordinator.SetOnRingChange(func(activeNodes []string) {
+		if contextStore == nil {
+			return
+		}
+
+		ownedMu.Lock()
+		defer ownedMu.Unlock()
+
+		for _, envID := range rulesStore.KnownEnvironments() {
+			if _, ok := lastOwnedShards[envID]; !ok {
+				lastOwnedShards[envID] = make(map[int]struct{})
+			}
+
+			newOwned := hashRing.GetOwnedShards(cfg.NodeID, envID, cfg.ShardCount)
+			newOwnedMap := make(map[int]struct{})
+			for _, s := range newOwned {
+				newOwnedMap[s] = struct{}{}
+			}
+
+			// Check for shards that this node just adopted
+			for _, shardID := range newOwned {
+				if _, wasOwned := lastOwnedShards[envID][shardID]; !wasOwned {
+					recoverCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					recovered, err := contextStore.GetShardSessions(recoverCtx, envID, shardID)
+					cancel()
+					if err != nil {
+						log.Printf("[%s] Error recovering shard %d sessions from Redis: %v",
+							constants.ServiceNameEvaluator, shardID, err)
+						continue
+					}
+
+					if len(recovered) > 0 {
+						flags, segments, _ := rulesStore.GetEnvironmentData(envID)
+						for _, sess := range recovered {
+							sess.LastAnswers = engine.EvaluateAll(flags, segments, engine.UserContext{
+								UserID:     sess.UserID,
+								Attributes: sess.Attributes,
+							})
+							sessionRegistry.Register(sess)
+						}
+						log.Printf("[%s] Zero-Reconnect Failover: Adopted Shard %d for env '%s' - recovered %d active sessions from Redis",
+							constants.ServiceNameEvaluator, shardID, envID, len(recovered))
+					}
+				}
+			}
+
+			lastOwnedShards[envID] = newOwnedMap
+		}
+	})
+
 	if err := coordinator.Start(ctx); err != nil {
 		log.Fatalf("[%s] Failed to start cluster coordinator: %v", constants.ServiceNameEvaluator, err)
 	}
 	defer coordinator.Stop()
 
-	// 4. Initialize Kafka Deliveries Producer (Slot Mailboxes on Data Plane Redpanda)
+	// 6. Initialize Kafka Deliveries Producer (Slot Mailboxes on Data Plane Redpanda)
 	deliveriesProducer, err := kgo.NewClient(
 		kgo.SeedBrokers(cfg.KafkaDeliveriesBroker),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
@@ -310,12 +384,20 @@ func main() {
 			sess.ShardID = engine.ComputeShard(sess.UserID, cfg.ShardCount)
 		}
 
-		// Initial evaluation for newly connected session
+		// 1. Initial evaluation for newly connected session
 		flags, segments, envVer := rulesStore.GetEnvironmentData(sess.EnvID)
 		sess.LastAnswers = engine.EvaluateAll(flags, segments, engine.UserContext{
 			UserID:     sess.UserID,
 			Attributes: sess.Attributes,
 		})
+
+		// 2. Persist to Redis Context Store before responding (Zero-reconnect contract)
+		if contextStore != nil {
+			if err := contextStore.SaveSession(r.Context(), &sess); err != nil {
+				log.Printf("[%s] Warning: failed to persist session %s to Redis: %v",
+					constants.ServiceNameEvaluator, sess.ConnectionID, err)
+			}
+		}
 
 		sessionRegistry.Register(&sess)
 
@@ -342,6 +424,10 @@ func main() {
 		}
 
 		sessionRegistry.Deregister(req.EnvID, req.ShardID, req.ConnectionID)
+		if contextStore != nil {
+			_ = contextStore.DeleteSession(r.Context(), req.EnvID, req.ShardID, req.ConnectionID)
+		}
+
 		w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "deregistered",
@@ -392,8 +478,16 @@ func main() {
 			PatchChan:    patchChan,
 		}
 
+		if contextStore != nil {
+			_ = contextStore.SaveSession(r.Context(), sess)
+		}
 		sessionRegistry.Register(sess)
-		defer sessionRegistry.Deregister(envID, shardID, connID)
+		defer func() {
+			sessionRegistry.Deregister(envID, shardID, connID)
+			if contextStore != nil {
+				_ = contextStore.DeleteSession(context.Background(), envID, shardID, connID)
+			}
+		}()
 
 		// Push initial PUT frame
 		initPayload, _ := json.Marshal(map[string]any{

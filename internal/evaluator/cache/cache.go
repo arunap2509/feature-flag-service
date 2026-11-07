@@ -120,6 +120,18 @@ func (s *Store) ApplyEvent(payload model.OutboxEventPayload) {
 	}
 }
 
+// KnownEnvironments returns a slice of all environment IDs currently tracked in cache
+func (s *Store) KnownEnvironments() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	envs := make([]string, 0, len(s.envVersions))
+	for envID := range s.envVersions {
+		envs = append(envs, envID)
+	}
+	return envs
+}
+
 // GetEnvironmentData retrieves the parsed flags, segments, and current version for evaluation
 func (s *Store) GetEnvironmentData(envID string) (map[string]*engine.ParsedFlag, map[string]*engine.ParsedSegment, int64) {
 	s.mu.RLock()

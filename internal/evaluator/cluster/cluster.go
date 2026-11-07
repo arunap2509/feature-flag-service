@@ -16,16 +16,24 @@ import (
 
 // Coordinator manages evaluator cluster membership and lease tracking via etcd
 type Coordinator struct {
-	client    *clientv3.Client
-	nodeID    string
-	nodeAddr  string
-	ring      *ring.Ring
-	leaseID   clientv3.LeaseID
-	revision  int64
-	nodeAddrs map[string]string
-	mu        sync.RWMutex
-	stopChan  chan struct{}
-	leaseTTL  int64
+	client       *clientv3.Client
+	nodeID       string
+	nodeAddr     string
+	ring         *ring.Ring
+	leaseID      clientv3.LeaseID
+	revision     int64
+	nodeAddrs    map[string]string
+	onRingChange func(activeNodes []string)
+	mu           sync.RWMutex
+	stopChan     chan struct{}
+	leaseTTL     int64
+}
+
+// SetOnRingChange registers a callback invoked whenever cluster membership changes
+func (c *Coordinator) SetOnRingChange(fn func(activeNodes []string)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onRingChange = fn
 }
 
 // NewCoordinator creates a new cluster coordinator connected to etcd
@@ -180,6 +188,14 @@ func (c *Coordinator) refreshMembers(ctx context.Context) error {
 	c.ring.SetMembers(nodeIDs)
 	log.Printf("[%s] Cluster ring updated (revision %d). Active nodes (%d): %v",
 		constants.ServiceNameEvaluator, resp.Header.Revision, len(nodeIDs), nodeIDs)
+
+	c.mu.RLock()
+	callback := c.onRingChange
+	c.mu.RUnlock()
+	if callback != nil {
+		go callback(nodeIDs)
+	}
+
 	return nil
 }
 

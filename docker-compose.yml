@@ -131,6 +131,18 @@ services:
       timeout: 3s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: ff-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
   evaluator:
     build:
       context: .
@@ -147,6 +159,7 @@ services:
       KAFKA_BROKER: "redpanda-control:9092"
       KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
+      REDIS_ADDR: "redis:6379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
@@ -156,6 +169,8 @@ services:
       redpanda-deliveries:
         condition: service_healthy
       etcd:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
@@ -176,6 +191,7 @@ services:
       KAFKA_BROKER: "redpanda-control:9092"
       KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
+      REDIS_ADDR: "redis:6379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
@@ -185,6 +201,8 @@ services:
       redpanda-deliveries:
         condition: service_healthy
       etcd:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
@@ -205,6 +223,7 @@ services:
       KAFKA_BROKER: "redpanda-control:9092"
       KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
+      REDIS_ADDR: "redis:6379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
@@ -214,6 +233,8 @@ services:
       redpanda-deliveries:
         condition: service_healthy
       etcd:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migration:
         condition: service_completed_successfully

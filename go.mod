@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -19,10 +20,12 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
+	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect
 	go.etcd.io/etcd/api/v3 v3.7.3 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect
 	go.etcd.io/etcd/client/v3 v3.7.3 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/net v0.61.0 // indirect

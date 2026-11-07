@@ -108,6 +108,13 @@ const (
 	SSEEventPing      = "ping"
 )
 
+// Context Store (Redis)
+const (
+	DefaultRedisAddr      = "redis:6379"
+	DefaultLocalRedisAddr = "localhost:6379"
+	RedisPrefixShard      = "shard:"
+)
+
 // Error Messages
 const (
 	ErrMsgCallerIdentityRequired  = "caller identity is required in X-User header"
