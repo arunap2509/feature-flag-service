@@ -18,21 +18,42 @@ services:
       timeout: 3s
       retries: 5
 
-  redpanda:
+  redpanda-control:
     image: redpandadata/redpanda:latest
-    container_name: ff-redpanda
+    container_name: ff-redpanda-control
     restart: unless-stopped
     command:
       - redpanda
       - start
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --advertise-kafka-addr internal://redpanda-control:9092,external://localhost:19092
       - --smp 1
       - --memory 512M
       - --mode dev-container
     ports:
       - "19092:19092"
       - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster info || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redpanda-deliveries:
+    image: redpandadata/redpanda:latest
+    container_name: ff-redpanda-deliveries
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19093
+      - --advertise-kafka-addr internal://redpanda-deliveries:9092,external://localhost:19093
+      - --smp 1
+      - --memory 1024M
+      - --mode dev-container
+    ports:
+      - "19093:19093"
+      - "9093:9092"
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster info || exit 1"]
       interval: 3s
@@ -78,11 +99,11 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_BROKER: "redpanda-control:9092"
     depends_on:
       postgres:
         condition: service_healthy
-      redpanda:
+      redpanda-control:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
@@ -123,13 +144,16 @@ services:
       NODE_ID: "evaluator-1"
       NODE_ADDR: "http://evaluator:9001"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_BROKER: "redpanda-control:9092"
+      KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
         condition: service_healthy
-      redpanda:
+      redpanda-control:
+        condition: service_healthy
+      redpanda-deliveries:
         condition: service_healthy
       etcd:
         condition: service_healthy
@@ -149,13 +173,16 @@ services:
       NODE_ID: "evaluator-2"
       NODE_ADDR: "http://evaluator-2:9002"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_BROKER: "redpanda-control:9092"
+      KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
         condition: service_healthy
-      redpanda:
+      redpanda-control:
+        condition: service_healthy
+      redpanda-deliveries:
         condition: service_healthy
       etcd:
         condition: service_healthy
@@ -175,13 +202,16 @@ services:
       NODE_ID: "evaluator-3"
       NODE_ADDR: "http://evaluator-3:9003"
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_BROKER: "redpanda-control:9092"
+      KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
       SHARD_COUNT: "3"
     depends_on:
       postgres:
         condition: service_healthy
-      redpanda:
+      redpanda-control:
+        condition: service_healthy
+      redpanda-deliveries:
         condition: service_healthy
       etcd:
         condition: service_healthy
@@ -200,11 +230,11 @@ services:
       PORT: "8091"
       SLOT_ID: "1"
       SERVER_ADDR: "http://conn-server:8091"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
       SHARD_COUNT: "3"
     depends_on:
-      redpanda:
+      redpanda-deliveries:
         condition: service_healthy
       etcd:
         condition: service_healthy
@@ -227,11 +257,11 @@ services:
       PORT: "8092"
       SLOT_ID: "2"
       SERVER_ADDR: "http://conn-server-2:8092"
-      KAFKA_BROKER: "redpanda:9092"
+      KAFKA_DELIVERIES_BROKER: "redpanda-deliveries:9092"
       ETCD_ENDPOINTS: "etcd:2379"
       SHARD_COUNT: "3"
     depends_on:
-      redpanda:
+      redpanda-deliveries:
         condition: service_healthy
       etcd:
         condition: service_healthy

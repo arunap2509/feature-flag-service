@@ -30,7 +30,7 @@ func loadConfig() Config {
 	}
 	broker := os.Getenv("KAFKA_BROKER")
 	if broker == "" {
-		broker = "localhost:19092"
+		broker = constants.DefaultLocalKafkaControlBroker
 	}
 	return Config{
 		DatabaseURL: dbURL,

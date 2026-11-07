@@ -44,9 +44,12 @@ func loadConfig() Config {
 	if serverAddr == "" {
 		serverAddr = fmt.Sprintf("http://localhost:%s", port)
 	}
-	broker := os.Getenv("KAFKA_BROKER")
+	broker := os.Getenv("KAFKA_DELIVERIES_BROKER")
 	if broker == "" {
-		broker = constants.DefaultKafkaBroker
+		broker = os.Getenv("KAFKA_BROKER")
+	}
+	if broker == "" {
+		broker = constants.DefaultKafkaDeliveriesBroker
 	}
 	etcdEp := os.Getenv("ETCD_ENDPOINTS")
 	if etcdEp == "" {

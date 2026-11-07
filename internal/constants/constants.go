@@ -79,10 +79,14 @@ const (
 
 // Message Broker (Kafka / Redpanda)
 const (
-	TopicFlagChanges      = "flag-changes"
-	TopicDeliveries       = "deliveries"
-	KafkaGroupEvaluator   = "evaluator-cluster"
-	DefaultKafkaBroker    = "redpanda:9092"
+	TopicFlagChanges                  = "flag-changes"
+	TopicDeliveries                   = "deliveries"
+	KafkaGroupEvaluator               = "evaluator-cluster"
+	DefaultKafkaBroker                = "redpanda-control:9092"
+	DefaultKafkaControlBroker         = "redpanda-control:9092"
+	DefaultKafkaDeliveriesBroker      = "redpanda-deliveries:9092"
+	DefaultLocalKafkaControlBroker    = "localhost:19092"
+	DefaultLocalKafkaDeliveriesBroker = "localhost:19093"
 )
 
 // Distributed Coordination (etcd)

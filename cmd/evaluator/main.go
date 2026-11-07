@@ -27,13 +27,14 @@ import (
 )
 
 type Config struct {
-	Port          string
-	NodeID        string
-	NodeAddr      string
-	KafkaBroker   string
-	EtcdEndpoints []string
-	DatabaseURL   string
-	ShardCount    int
+	Port                  string
+	NodeID                string
+	NodeAddr              string
+	KafkaBroker           string
+	KafkaDeliveriesBroker string
+	EtcdEndpoints         []string
+	DatabaseURL           string
+	ShardCount            int
 }
 
 func loadConfig() Config {
@@ -51,7 +52,11 @@ func loadConfig() Config {
 	}
 	broker := os.Getenv("KAFKA_BROKER")
 	if broker == "" {
-		broker = constants.DefaultKafkaBroker
+		broker = constants.DefaultKafkaControlBroker
+	}
+	delivBroker := os.Getenv("KAFKA_DELIVERIES_BROKER")
+	if delivBroker == "" {
+		delivBroker = constants.DefaultKafkaDeliveriesBroker
 	}
 	etcdEp := os.Getenv("ETCD_ENDPOINTS")
 	if etcdEp == "" {
@@ -69,13 +74,14 @@ func loadConfig() Config {
 	}
 
 	return Config{
-		Port:          port,
-		NodeID:        nodeID,
-		NodeAddr:      nodeAddr,
-		KafkaBroker:   broker,
-		EtcdEndpoints: strings.Split(etcdEp, ","),
-		DatabaseURL:   dbURL,
-		ShardCount:    shardCount,
+		Port:                  port,
+		NodeID:                nodeID,
+		NodeAddr:              nodeAddr,
+		KafkaBroker:           broker,
+		KafkaDeliveriesBroker: delivBroker,
+		EtcdEndpoints:         strings.Split(etcdEp, ","),
+		DatabaseURL:           dbURL,
+		ShardCount:            shardCount,
 	}
 }
 
@@ -120,9 +126,9 @@ func main() {
 	}
 	defer coordinator.Stop()
 
-	// 4. Initialize Kafka Deliveries Producer (Slot Mailboxes)
+	// 4. Initialize Kafka Deliveries Producer (Slot Mailboxes on Data Plane Redpanda)
 	deliveriesProducer, err := kgo.NewClient(
-		kgo.SeedBrokers(cfg.KafkaBroker),
+		kgo.SeedBrokers(cfg.KafkaDeliveriesBroker),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
 	if err != nil {
