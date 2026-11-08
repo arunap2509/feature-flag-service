@@ -110,7 +110,10 @@ func main() {
 	defer conn.Close(context.Background())
 
 	// 3. Ensure Replication Slot exists
-	slotName := constants.ReplicationSlotOutbox
+	slotName := os.Getenv("SLOT_NAME")
+	if slotName == "" {
+		slotName = constants.ReplicationSlotOutbox
+	}
 	outputPlugin := constants.LogicalOutputPlugin
 	_, err = pglogrepl.CreateReplicationSlot(ctx, conn, slotName, outputPlugin, pglogrepl.CreateReplicationSlotOptions{
 		Temporary:      false,

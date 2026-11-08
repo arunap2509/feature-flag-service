@@ -24,3 +24,5 @@ spec:
           value: "postgres.feature-flags.svc.cluster.local:5432"
         - name: KAFKA_BROKER
           value: "redpanda-control.feature-flags.svc.cluster.local:9092"
+        - name: SLOT_NAME
+          value: "outbox_cdc_slot_k8s"
