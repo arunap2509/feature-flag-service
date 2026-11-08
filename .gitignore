@@ -13,10 +13,11 @@ bin/
 # Preview temporary directories
 .archify-preview-*
 
-# Architecture diagrams and specifications
+# Local learning and architecture notes
+learning/
+review/
 application-flow/
 feature-flag-system.html
 my-system.json
-review/
 
 

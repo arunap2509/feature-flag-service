@@ -158,35 +158,5 @@ go run cmd/sim-clients/main.go -gateway=http://localhost:18080 -mgmt=http://loca
 
 ---
 
-## 📚 Deep Dive Technical Guides
-
-Detailed engineering breakdowns and architectural debates documented during development:
-
-1. [Database Migration Strategies](learning/01-database-migration-strategies.md)
-2. [API DTO Patterns & Stripe-Style ID Generation](learning/02-api-dto-patterns-and-id-generation.md)
-3. [Transactional Outbox vs Polling vs CDC](learning/03-transactional-outbox-vs-polling-and-cdc.md)
-4. [Why Distributed Transactions Fail Between DB and Kafka](learning/04-why-distributed-transactions-fail-between-db-and-kafka.md)
-5. [Polling Outbox vs Log-Based CDC](learning/05-polling-outbox-vs-log-based-cdc.md)
-6. [PostgreSQL Logical Replication Internals](learning/06-postgresql-logical-replication-internals.md)
-7. [WAL-Level Logical Production Risks & Safeguards](learning/07-wal-level-logical-production-risks-and-safeguards.md)
-8. [Evaluator Engine, Consistent Hashing & etcd](learning/08-evaluator-engine-consistent-hashing-and-etcd.md)
-9. [Deterministic Percentage Rollouts & Salting](learning/09-deterministic-percentage-rollouts-and-salting.md)
-10. [Go net/http Streaming Gotchas & Timeouts](learning/10-go-net-http-streaming-gotchas-and-timeouts.md)
-11. [Scaling Evaluator Fleet: K8s vs Docker Compose](learning/11-scaling-evaluator-fleet-k8s-vs-compose.md)
-12. [Evaluator Internals & etcd CLI Guide](learning/12-evaluator-internals-and-etcd-cli-guide.md)
-13. [Cache Architecture: Copy-on-Write & Failover](learning/13-cache-architecture-cow-and-cluster-failover.md)
-14. [Kafka Broadcast vs Shard Execution](learning/14-kafka-broadcast-vs-shard-execution.md)
-15. [Deliveries Mailbox & Context Store](learning/15-deliveries-mailbox-and-context-store.md)
-16. [Edge Connection Server & Slot Mailboxes](learning/16-edge-connection-server-and-slot-mailboxes.md)
-17. [Control Plane vs Data Plane Kafka Isolation](learning/17-control-plane-vs-data-plane-kafka-isolation.md)
-18. [Context Store with Redis & Failover](learning/18-context-store-with-redis-and-failover.md)
-19. [Layer 4 vs Layer 7 Load Balancing & SSE Proxying](learning/19-layer-4-layer-7-load-balancing-and-sse-proxying.md)
-20. [Client Reconnect Storms, Thundering Herds & Full Jitter](learning/20-client-reconnect-storms-and-jittered-backoff.md)
-21. [Edge Server Boundaries & Redis Session Decoupling](learning/21-edge-server-boundaries-and-redis-session-decoupling.md)
-22. [Chaos Engineering & Stateful Failure Domains in K8s](learning/22-chaos-engineering-and-stateful-failure-domains.md)
-23. [Solving State Loss with Raft Consensus & Replica Failover](learning/23-solving-state-loss-with-raft-and-replica-failover.md)
-
----
-
 ## 📄 License
 MIT License.
