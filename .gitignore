@@ -13,9 +13,6 @@ bin/
 # Preview temporary directories
 .archify-preview-*
 
-# Learning notes
-learning/
-
 # Architecture diagrams and specifications
 application-flow/
 feature-flag-system.html
