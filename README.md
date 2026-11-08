@@ -65,28 +65,6 @@ The platform decouples the **Control Plane** (rule configuration & persistence) 
 
 ---
 
-## 🔑 Key Engineering Invariants
-
-1. **Zero Dual-Write Race Conditions (Transactional Outbox & CDC)**:
-   - Operators modify flag rules, rollouts, and targeting segments via the Management API using **Optimistic Concurrency Control (OCC `If-Match`)** returning HTTP `412 Precondition Failed` on version mismatch.
-   - Outbox events are committed atomically inside the database transaction.
-   - The CDC publisher (`outbox-pub`) tails PostgreSQL's Write-Ahead Log (WAL) directly using logical decoding (`pgoutput`). If the message broker is temporarily down, the PostgreSQL replication slot LSN is held, guaranteeing **zero dropped events**.
-2. **Consistent Hash Ring with Virtual Nodes (`etcd`)**:
-   - Evaluator pods register with 100 virtual nodes each in `etcd` (`/members/evaluators/*`).
-   - Tenant environments are partitioned into deterministic shards (`shardID = Hash(userID) % shardCount`).
-   - Evaluator failures trigger automated lease expiration in $< 3\text{s}$, seamlessly remapping keyspace to surviving nodes without service disruption.
-3. **Cryptographically Salted Deterministic Rollouts**:
-   - Percentage rollouts use **FNV-1a 64-bit hashing** combining `salt + flag_key + user_id`.
-   - Modulo 100,000 provides $0.001\%$ precision, ensuring users maintain deterministic flag values across rollouts while preventing user-correlation bias across flags.
-4. **Dual-Topic Kafka Isolation**:
-   - **Control Topic (`flag-changes`)**: Low-frequency broadcast of rule modifications.
-   - **Deliveries Topic (`deliveries`)**: High-throughput partitioned mailbox. Each Edge Connection Server consumes exclusively from its mapped partition: $\text{partition} = (\text{slot\_id} - 1) \pmod 8$.
-5. **Ultra-Fast Server SDK SLA ($< 1\mu\text{s}$)**:
-   - Backend services use the Server SDK to evaluate rules in-memory against local AST snapshots.
-   - Benchmarked at **34 nanoseconds per evaluation** ($> 30\text{M}$ evals/sec per core).
-
----
-
 ## 🖥️ Fleet Mission Control UI
 
 The service includes a real-time cluster observability and chaos engineering dashboard built directly into the codebase:
