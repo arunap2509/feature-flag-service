@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-schema
+  namespace: feature-flags
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS tenants (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS environments (
+        id VARCHAR(64) PRIMARY KEY,
+        tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        name VARCHAR(64) NOT NULL,
+        environment_version BIGINT NOT NULL DEFAULT 1,
+        shard_count INT NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_tenant_environment_name UNIQUE (tenant_id, name)
+    );
+
+    CREATE TABLE IF NOT EXISTS sdk_keys (
+        id BIGSERIAL PRIMARY KEY,
+        environment_id VARCHAR(64) NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+        key VARCHAR(128) NOT NULL UNIQUE,
+        key_type VARCHAR(16) NOT NULL CHECK (key_type IN ('client', 'server')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS flags (
+        id BIGSERIAL PRIMARY KEY,
+        environment_id VARCHAR(64) NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+        key VARCHAR(128) NOT NULL,
+        state VARCHAR(8) NOT NULL DEFAULT 'off' CHECK (state IN ('on', 'off')),
+        version BIGINT NOT NULL DEFAULT 1,
+        rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+        fallback_value BOOLEAN NOT NULL DEFAULT FALSE,
+        salt VARCHAR(64) NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_environment_flag_key UNIQUE (environment_id, key)
+    );
+
+    CREATE TABLE IF NOT EXISTS segments (
+        id BIGSERIAL PRIMARY KEY,
+        environment_id VARCHAR(64) NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+        key VARCHAR(128) NOT NULL,
+        version BIGINT NOT NULL DEFAULT 1,
+        user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_environment_segment_key UNIQUE (environment_id, key)
+    );
+
+    CREATE TABLE IF NOT EXISTS flag_history (
+        id BIGSERIAL PRIMARY KEY,
+        flag_id BIGINT NOT NULL REFERENCES flags(id) ON DELETE CASCADE,
+        version BIGINT NOT NULL,
+        state VARCHAR(8) NOT NULL,
+        rules JSONB NOT NULL,
+        fallback_value BOOLEAN NOT NULL DEFAULT FALSE,
+        salt VARCHAR(64) NOT NULL DEFAULT '',
+        changed_by VARCHAR(128) NOT NULL DEFAULT 'system',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS outbox (
+        id BIGSERIAL PRIMARY KEY,
+        env_id VARCHAR(64) NOT NULL,
+        env_version BIGINT NOT NULL,
+        event_type VARCHAR(32) NOT NULL,
+        payload JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_flags_environment_id ON flags(environment_id);
+    CREATE INDEX IF NOT EXISTS idx_flag_history_flag_id ON flag_history(flag_id);
+    CREATE INDEX IF NOT EXISTS idx_sdk_keys_environment_id ON sdk_keys(environment_id);
+    CREATE INDEX IF NOT EXISTS idx_segments_environment_id ON segments(environment_id);
+    CREATE INDEX IF NOT EXISTS idx_outbox_env_version ON outbox(env_id, env_version);
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'outbox_pub') THEN
+            CREATE PUBLICATION outbox_pub FOR TABLE outbox WITH (publish = 'insert');
+        END IF;
+    END
+    $$;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: feature-flags
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: feature-flags
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        args:
+        - postgres
+        - -c
+        - wal_level=logical
+        - -c
+        - max_replication_slots=5
+        - -c
+        - max_wal_senders=5
+        - -c
+        - max_slot_wal_keep_size=10GB
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        - name: POSTGRES_DB
+          value: featureflags
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-init-schema
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 2Gi

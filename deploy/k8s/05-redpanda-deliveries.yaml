@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda-deliveries
+  namespace: feature-flags
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+  selector:
+    app: redpanda-deliveries
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda-deliveries
+  namespace: feature-flags
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redpanda-deliveries
+  template:
+    metadata:
+      labels:
+        app: redpanda-deliveries
+    spec:
+      containers:
+      - name: redpanda
+        image: redpandadata/redpanda:latest
+        args:
+        - redpanda
+        - start
+        - --kafka-addr=internal://0.0.0.0:9092
+        - --advertise-kafka-addr=internal://redpanda-deliveries:9092
+        - --smp=1
+        - --memory=512M
+        - --mode=dev-container
+        ports:
+        - containerPort: 9092

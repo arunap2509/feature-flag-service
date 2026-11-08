@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outbox-pub
+  namespace: feature-flags
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: outbox-pub
+  template:
+    metadata:
+      labels:
+        app: outbox-pub
+    spec:
+      containers:
+      - name: outbox-pub
+        image: feature-flag-outbox-pub:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: DATABASE_URL
+          value: "postgres://postgres:postgres@postgres.feature-flags.svc.cluster.local:5432/featureflags?sslmode=disable"
+        - name: REPLICATION_HOST
+          value: "postgres.feature-flags.svc.cluster.local:5432"
+        - name: KAFKA_BROKER
+          value: "redpanda-control.feature-flags.svc.cluster.local:9092"

@@ -120,6 +120,37 @@ const (
 	RedisPrefixShard      = "shard:"
 )
 
+// Database & Local Connection Defaults
+const (
+	DefaultLocalPostgresURL = "postgres://postgres:postgres@localhost:5440/featureflags?sslmode=disable"
+	DefaultDockerPostgresURL = "postgres://postgres:postgres@postgres:5432/featureflags?sslmode=disable"
+)
+
+// Query Parameters & Routing
+const (
+	QueryParamEnvID      = "env_id"
+	QueryParamUserID     = "user_id"
+	QueryParamClientType = "client_type"
+)
+
+// Simulation & Benchmarking Constants
+const (
+	ScenarioMixed           = "mixed"
+	ScenarioRollout         = "rollout"
+	ScenarioToggle          = "toggle"
+	ScenarioKill            = "kill"
+	ClientModeDual          = "dual"
+	ClientModeMobile        = "mobile"
+	ClientModeServer        = "server"
+	SegmentBetaTesters      = "beta_testers"
+	SegmentEnterpriseTier   = "enterprise_tier"
+	DefaultOperatorRate     = 20
+	DefaultMobileClients    = 500
+	DefaultServerClients    = 20
+	DefaultGatewayURL       = "http://localhost:8080"
+	DefaultMgmtAPIURL       = "http://localhost:8081"
+)
+
 // Error Messages
 const (
 	ErrMsgCallerIdentityRequired  = "caller identity is required in X-User header"

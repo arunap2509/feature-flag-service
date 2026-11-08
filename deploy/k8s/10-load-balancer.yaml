@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: load-balancer
+  namespace: feature-flags
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30080
+  selector:
+    app: load-balancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-balancer
+  namespace: feature-flags
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: load-balancer
+  template:
+    metadata:
+      labels:
+        app: load-balancer
+    spec:
+      containers:
+      - name: load-balancer
+        image: feature-flag-load-balancer:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: PORT
+          value: "8080"
+        - name: ETCD_ENDPOINTS
+          value: "etcd.feature-flags.svc.cluster.local:2379"
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10

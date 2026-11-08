@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: evaluator
+  namespace: feature-flags
+spec:
+  clusterIP: None
+  ports:
+  - port: 9001
+    name: http
+    targetPort: 9001
+  selector:
+    app: evaluator
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: evaluator
+  namespace: feature-flags
+spec:
+  serviceName: evaluator
+  replicas: 3
+  selector:
+    matchLabels:
+      app: evaluator
+  template:
+    metadata:
+      labels:
+        app: evaluator
+    spec:
+      containers:
+      - name: evaluator
+        image: feature-flag-evaluator:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - |
+          export NODE_ID="${POD_NAME}"
+          export NODE_ADDR="http://${POD_IP}:9001"
+          echo "[evaluator-k8s] Launching node ${NODE_ID} advertising ${NODE_ADDR}"
+          exec /app/evaluator
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: PORT
+          value: "9001"
+        - name: DATABASE_URL
+          value: "postgres://postgres:postgres@postgres.feature-flags.svc.cluster.local:5432/featureflags?sslmode=disable"
+        - name: KAFKA_BROKER
+          value: "redpanda-control.feature-flags.svc.cluster.local:9092"
+        - name: KAFKA_DELIVERIES_BROKER
+          value: "redpanda-deliveries.feature-flags.svc.cluster.local:9092"
+        - name: REDIS_ADDR
+          value: "redis.feature-flags.svc.cluster.local:6379"
+        - name: ETCD_ENDPOINTS
+          value: "etcd.feature-flags.svc.cluster.local:2379"
+        - name: SHARD_COUNT
+          value: "3"
+        ports:
+        - containerPort: 9001
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9001
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9001
+          initialDelaySeconds: 5
+          periodSeconds: 10
