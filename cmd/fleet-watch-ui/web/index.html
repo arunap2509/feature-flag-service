@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fleet Watch - Feature Flag Cluster Observability</title>
+  <style>
+    :root {
+      --bg: #090d13;
+      --card-bg: #111620;
+      --card-header: #161d2a;
+      --border: #212c3d;
+      --border-focus: #3b82f6;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.15);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.15);
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.15);
+      --warning: #f59e0b;
+      --purple: #a855f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 18px 24px; min-height: 100vh; line-height: 1.4; }
+
+    /* Header */
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, #0284c7, #6366f1); display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 0 15px rgba(2, 132, 199, 0.4); }
+    .brand-text h1 { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+    .brand-text p { font-size: 12px; color: var(--text-muted); }
+
+    .top-controls { display: flex; align-items: center; gap: 14px; }
+    .pill { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; background: var(--card-bg); border: 1px solid var(--border); }
+    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+    button { cursor: pointer; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); transition: all 0.15s; }
+    button:hover { background: #1e293b; border-color: var(--text-muted); color: #fff; }
+    button.btn-danger { background: rgba(239, 68, 68, 0.15); border-color: var(--danger); color: #fca5a5; }
+    button.btn-danger:hover { background: var(--danger); color: #fff; }
+    button.btn-primary { background: linear-gradient(135deg, #0284c7, #2563eb); border: none; color: #fff; }
+    button.btn-primary:hover { opacity: 0.9; }
+
+    /* Top KPI Cards */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .kpi-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; position: relative; overflow: hidden; }
+    .kpi-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .kpi-card.blue::before { background: var(--accent); }
+    .kpi-card.purple::before { background: var(--purple); }
+    .kpi-card.green::before { background: var(--success); }
+    .kpi-card.amber::before { background: var(--warning); }
+    .kpi-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
+    .kpi-val { font-size: 24px; font-weight: 700; color: #fff; display: flex; align-items: baseline; gap: 6px; }
+    .kpi-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+    .kpi-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: auto; }
+
+    /* Main Grid */
+    .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+    .panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+    .panel-header { background: var(--card-header); padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .panel-title { font-size: 13px; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .panel-body { padding: 16px 18px; flex: 1; }
+
+    /* Hash Ring & Slots Cards */
+    .nodes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .node-card { background: #0c121d; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; transition: border-color 0.15s; }
+    .node-card:hover { border-color: var(--accent); }
+    .node-name { font-size: 12px; font-weight: 600; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .node-addr { font-size: 11px; font-family: monospace; color: var(--accent); margin: 4px 0 2px 0; }
+    .node-meta { font-size: 10px; color: var(--text-muted); display: flex; gap: 8px; }
+
+    /* HPA Bars */
+    .hpa-item { margin-bottom: 18px; }
+    .hpa-item:last-child { margin-bottom: 0; }
+    .hpa-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 12px; }
+    .hpa-name { font-weight: 600; color: #fff; }
+    .hpa-replicas { font-weight: 700; color: var(--accent); }
+    .progress-track { height: 10px; background: #0c121d; border-radius: 5px; overflow: hidden; position: relative; border: 1px solid var(--border); }
+    .progress-bar { height: 100%; border-radius: 5px; transition: width 0.4s ease; }
+    .progress-target { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; z-index: 2; }
+    .progress-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+    /* Pod Fleet Table */
+    .fleet-table-wrap { overflow-x: auto; max-height: 400px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: var(--card-header); text-align: left; padding: 10px 14px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+    td { padding: 9px 14px; border-bottom: 1px solid #1a2230; color: var(--text); }
+    tr:hover td { background: rgba(56, 189, 248, 0.03); }
+
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-running { background: var(--success-glow); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-pending { background: rgba(245, 158, 11, 0.15); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-error { background: var(--danger-glow); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    /* Toast Notification */
+    #toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; border: 1px solid var(--border); color: #fff; padding: 12px 18px; border-radius: 8px; font-size: 13px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); transform: translateY(100px); opacity: 0; transition: all 0.25s ease; z-index: 100; display: flex; align-items: center; gap: 8px; }
+    #toast.show { transform: translateY(0); opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div class="brand-text">
+        <h1>FLEET MISSION CONTROL</h1>
+        <p>Feature Flag Distributed Real-Time Architecture</p>
+      </div>
+    </div>
+    <div class="top-controls">
+      <div class="pill">
+        <span class="pulse-dot"></span>
+        <span id="conn-status">LIVE (Auto-refresh 1s)</span>
+      </div>
+      <div class="pill">
+        <span>Namespace:</span> <strong id="k8s-ns" style="color:var(--accent);">feature-flags</strong>
+      </div>
+      <button onclick="toggleRefresh()" id="btn-toggle">Pause Refresh</button>
+      <button onclick="triggerVerification()" class="btn-primary">🧪 Run E2E Verification</button>
+    </div>
+  </div>
+
+  <!-- KPI Row -->
+  <div class="kpi-grid">
+    <div class="kpi-card blue">
+      <div class="kpi-title">Consistent Hash Ring (Evaluators)</div>
+      <div class="kpi-val">
+        <span id="eval-count">3</span>
+        <span class="kpi-sub">/ 10 Max</span>
+        <span class="kpi-badge badge-running" id="ring-status">BALANCED</span>
+      </div>
+    </div>
+    <div class="kpi-card purple">
+      <div class="kpi-title">Edge Connection Server Slots</div>
+      <div class="kpi-val">
+        <span id="conn-count">2</span>
+        <span class="kpi-sub">/ 20 Max</span>
+        <span class="kpi-badge badge-running" id="slots-status">ACTIVE</span>
+      </div>
+    </div>
+    <div class="kpi-card green">
+      <div class="kpi-title">Cluster Pod Fleet Status</div>
+      <div class="kpi-val">
+        <span id="pod-count">11</span>
+        <span class="kpi-sub">Total Pods</span>
+        <span class="kpi-badge badge-running" id="pod-health">100% HEALTHY</span>
+      </div>
+    </div>
+    <div class="kpi-card amber">
+      <div class="kpi-title">Total Active CPU & RAM</div>
+      <div class="kpi-val">
+        <span id="total-cpu">45m</span>
+        <span class="kpi-sub" id="total-ram">/ 380MiB</span>
+        <span class="kpi-badge badge-running">NORMAL</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Grid: etcd Topology (Left) & HPA Autoscaling (Right) -->
+  <div class="main-grid">
+    
+    <!-- Left: etcd Live Distributed Topology -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>🔷 Distributed Coordination & Hash Ring Topology</span>
+          <span style="font-size:11px; color:var(--text-muted); font-family:monospace;">/members/*</span>
+        </div>
+        <span class="pill" style="padding:2px 8px; font-size:11px; background:#0c121d;" id="etcd-rev">etcd rev: sync</span>
+      </div>
+      <div class="panel-body">
+        <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:8px;">
+          Evaluators on Ring (Virtual Nodes: 100/node)
+        </div>
+        <div class="nodes-grid" id="eval-grid">
+          <!-- Dynamic Evaluator Cards -->
+        </div>
+
+        <div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin: 16px 0 8px 0;">
+          Edge Connection Server Slots (Kafka Partition Mapped)
+        </div>
+        <div class="nodes-grid" id="conn-grid">
+          <!-- Dynamic Conn Server Cards -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Autoscaling HPA Live Status -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>📈 Horizontal Pod Autoscaling (HPA Engine)</span>
+        </div>
+        <span style="font-size:11px; color:var(--text-muted);">Threshold: 50% CPU</span>
+      </div>
+      <div class="panel-body" style="display:flex; flex-direction:column; justify-content:space-around;">
+        
+        <!-- Evaluator HPA -->
+        <div class="hpa-item">
+          <div class="hpa-header">
+            <span class="hpa-name">Evaluator Tier (evaluator-hpa)</span>
+            <span>Replicas: <strong class="hpa-replicas" id="eval-hpa-replicas">3</strong> (Min: 3, Max: 10)</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-target" style="left: 50%;" title="50% Target Threshold"></div>
+            <div class="progress-bar" id="eval-hpa-bar" style="width: 15%; background: var(--accent);"></div>
+          </div>
+          <div class="progress-labels">
+            <span id="eval-hpa-current">Usage: 8%</span>
+            <span>Target: 50%</span>
+            <span>Scale Limit: 10 Pods</span>
+          </div>
+        </div>
+
+        <!-- Conn Server HPA -->
+        <div class="hpa-item">
+          <div class="hpa-header">
+            <span class="hpa-name">Edge Connection Tier (conn-server-hpa)</span>
+            <span>Replicas: <strong class="hpa-replicas" id="conn-hpa-replicas">2</strong> (Min: 2, Max: 20)</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-target" style="left: 50%;" title="50% Target Threshold"></div>
+            <div class="progress-bar" id="conn-hpa-bar" style="width: 24%; background: var(--purple);"></div>
+          </div>
+          <div class="progress-labels">
+            <span id="conn-hpa-current">Usage: 12%</span>
+            <span>Target: 50%</span>
+            <span>Scale Limit: 20 Pods</span>
+          </div>
+        </div>
+
+        <!-- Quick Chaos Testing Action Box -->
+        <div style="background:#0c121d; border:1px solid var(--border); border-radius:6px; padding:12px; margin-top:14px;">
+          <div style="font-size:11px; font-weight:600; color:#fff; margin-bottom:8px;">🔥 Quick Chaos Engineering Triggers:</div>
+          <div style="display:flex; gap:8px;">
+            <button onclick="killPod('evaluator-0')" class="btn-danger">⚡ Kill Evaluator-0</button>
+            <button onclick="killPod('conn-server-0')" class="btn-danger">⚡ Kill Conn-Server-0</button>
+            <button onclick="killPod('load-balancer-')" class="btn-danger">⚡ Kill Load Balancer</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Pod Fleet Table -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <span>🖥️ Live Pod Fleet & Real-Time Resource Consumption</span>
+      </div>
+      <span style="font-size:11px; color:var(--text-muted);" id="pod-table-count">11 Active Pods</span>
+    </div>
+    <div class="fleet-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pod Name</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Ready</th>
+            <th>Restarts</th>
+            <th>CPU (cores)</th>
+            <th>Memory</th>
+            <th>Chaos Action</th>
+          </tr>
+        </thead>
+        <tbody id="pod-table-body">
+          <!-- Dynamic Pod Rows -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast">
+    <span id="toast-icon">⚡</span>
+    <span id="toast-msg">Action triggered</span>
+  </div>
+
+  <script>
+    let isRefreshing = true;
+    let refreshTimer = null;
+
+    async function fetchFleet() {
+      if (!isRefreshing) return;
+      try {
+        const resp = await fetch('/api/fleet');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        renderData(data);
+      } catch (err) {
+        console.error("Failed to fetch fleet data:", err);
+      }
+    }
+
+    function renderData(data) {
+      // 1. Update KPIs
+      const evals = data.etcd?.evaluators || [];
+      const conns = data.etcd?.conn_servers || [];
+      const pods = data.pods || [];
+
+      document.getElementById('eval-count').textContent = evals.length;
+      document.getElementById('conn-count').textContent = conns.length;
+      document.getElementById('pod-count').textContent = pods.length;
+      document.getElementById('pod-table-count').textContent = `${pods.length} Active Pods`;
+
+      // Aggregate CPU and RAM
+      let totalMilliCPU = 0;
+      let totalMemMiB = 0;
+      pods.forEach(p => {
+        if (p.cpu_num) totalMilliCPU += p.cpu_num;
+        if (p.mem_num) totalMemMiB += p.mem_num;
+      });
+      document.getElementById('total-cpu').textContent = `${totalMilliCPU}m`;
+      document.getElementById('total-ram').textContent = `/ ${totalMemMiB}MiB`;
+
+      // 2. Render etcd Evaluators Grid
+      const evalGrid = document.getElementById('eval-grid');
+      evalGrid.innerHTML = evals.map(e => `
+        <div class="node-card">
+          <div class="node-name">
+            <span>${e.node_id}</span>
+            <span class="badge badge-running">ON RING</span>
+          </div>
+          <div class="node-addr">${e.addr}</div>
+          <div class="node-meta">
+            <span>Lease: active</span>
+            <span>VNodes: 100</span>
+          </div>
+        </div>
+      `).join('');
+
+      // 3. Render etcd Conn-Servers Grid
+      const connGrid = document.getElementById('conn-grid');
+      connGrid.innerHTML = conns.map((c, i) => {
+        const partition = (i % 8);
+        return `
+          <div class="node-card">
+            <div class="node-name">
+              <span>${c.slot}</span>
+              <span class="badge badge-running">UPSTREAM</span>
+            </div>
+            <div class="node-addr">${c.addr}</div>
+            <div class="node-meta">
+              <span>Partition: P${partition}</span>
+              <span>SSE Ready</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 4. Render HPA Bars
+      const hpas = data.hpa || [];
+      hpas.forEach(h => {
+        if (h.name.includes('evaluator')) {
+          document.getElementById('eval-hpa-replicas').textContent = h.replicas;
+          const pct = parsePercent(h.cpu_actual);
+          const bar = document.getElementById('eval-hpa-bar');
+          bar.style.width = Math.min(pct * 2, 100) + '%';
+          bar.style.background = pct >= 50 ? 'var(--danger)' : 'var(--accent)';
+          document.getElementById('eval-hpa-current').textContent = `Usage: ${h.cpu_actual}`;
+        } else if (h.name.includes('conn-server')) {
+          document.getElementById('conn-hpa-replicas').textContent = h.replicas;
+          const pct = parsePercent(h.cpu_actual);
+          const bar = document.getElementById('conn-hpa-bar');
+          bar.style.width = Math.min(pct * 2, 100) + '%';
+          bar.style.background = pct >= 50 ? 'var(--danger)' : 'var(--purple)';
+          document.getElementById('conn-hpa-current').textContent = `Usage: ${h.cpu_actual}`;
+        }
+      });
+
+      // 5. Render Pod Fleet Table
+      const tbody = document.getElementById('pod-table-body');
+      tbody.innerHTML = pods.map(p => {
+        let badgeClass = 'badge-running';
+        if (p.status !== 'Running') badgeClass = 'badge-error';
+        else if (p.ready !== '1/1') badgeClass = 'badge-pending';
+
+        const role = getPodRole(p.name);
+        return `
+          <tr>
+            <td style="font-weight:600; font-family:monospace;">${p.name}</td>
+            <td><span style="font-size:11px; color:var(--text-muted);">${role}</span></td>
+            <td><span class="badge ${badgeClass}">${p.status}</span></td>
+            <td>${p.ready}</td>
+            <td>${p.restarts}</td>
+            <td style="font-family:monospace; color:var(--accent); font-weight:600;">${p.cpu}</td>
+            <td style="font-family:monospace;">${p.memory}</td>
+            <td>
+              <button onclick="killPod('${p.name}')" class="btn-danger" style="padding:2px 8px; font-size:11px;">Kill</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function parsePercent(str) {
+      if (!str || str.includes('unknown')) return 0;
+      const num = parseInt(str.replace(/[^0-9]/g, ''));
+      return isNaN(num) ? 0 : num;
+    }
+
+    function getPodRole(name) {
+      if (name.includes('evaluator')) return 'Evaluator (Hash Ring)';
+      if (name.includes('conn-server')) return 'Edge Connection (SSE)';
+      if (name.includes('load-balancer')) return 'Layer-7 Load Balancer';
+      if (name.includes('mgmt-api')) return 'Management REST API';
+      if (name.includes('outbox-pub')) return 'WAL CDC Streamer';
+      if (name.includes('redpanda-deliveries')) return 'Deliveries Kafka Broker';
+      if (name.includes('redpanda-control')) return 'Control Kafka Broker';
+      if (name.includes('redis')) return 'Session Context Store';
+      if (name.includes('etcd')) return 'Distributed Coordinator';
+      return 'Workload';
+    }
+
+    async function killPod(podPrefix) {
+      showToast(`⚡ Initiating chaos: Killing pod matching '${podPrefix}'...`);
+      try {
+        const resp = await fetch('/api/chaos/kill-pod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pod_prefix: podPrefix })
+        });
+        const res = await resp.json();
+        showToast(res.message || "Pod terminated!");
+        fetchFleet();
+      } catch (err) {
+        showToast("Error killing pod: " + err.message);
+      }
+    }
+
+    async function triggerVerification() {
+      showToast("🧪 Running End-to-End Verification Audit...");
+      try {
+        const resp = await fetch('/api/verification/run', { method: 'POST' });
+        const res = await resp.json();
+        if (res.all_passed) {
+          showToast("🎉 All 5 E2E Verification Tests Passed!");
+        } else {
+          showToast("⚠️ Verification complete with failures: check scorecard");
+        }
+      } catch (err) {
+        showToast("Audit failed: " + err.message);
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    function toggleRefresh() {
+      isRefreshing = !isRefreshing;
+      const btn = document.getElementById('btn-toggle');
+      const status = document.getElementById('conn-status');
+      if (isRefreshing) {
+        btn.textContent = 'Pause Refresh';
+        status.textContent = 'LIVE (Auto-refresh 1s)';
+        fetchFleet();
+      } else {
+        btn.textContent = 'Resume Refresh';
+        status.textContent = 'PAUSED';
+      }
+    }
+
+    // Initial fetch and poll every 1s
+    fetchFleet();
+    setInterval(fetchFleet, 1000);
+  </script>
+</body>
+</html>

@@ -149,6 +149,10 @@ const (
 	DefaultServerClients    = 20
 	DefaultGatewayURL       = "http://localhost:8080"
 	DefaultMgmtAPIURL       = "http://localhost:8081"
+	DefaultK8sGatewayURL    = "http://localhost:18080"
+	DefaultK8sMgmtAPIURL    = "http://localhost:18081"
+	DefaultK8sNamespace     = "feature-flags"
+	DefaultFleetWatchPort   = "9090"
 )
 
 // Error Messages
