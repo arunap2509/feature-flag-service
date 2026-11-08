@@ -65,6 +65,13 @@ spec:
           value: "3"
         ports:
         - containerPort: 9001
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
         readinessProbe:
           httpGet:
             path: /healthz

@@ -13,3 +13,4 @@ resources:
   - 08-evaluator.yaml
   - 09-conn-server.yaml
   - 10-load-balancer.yaml
+  - 11-hpa.yaml
