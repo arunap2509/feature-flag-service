@@ -138,6 +138,8 @@
     <div class="pipe-node"><div class="pipe-dot"></div> Deliveries Redpanda (:9093)</div>
     <div class="pipe-arrow">──►</div>
     <div class="pipe-node"><div class="pipe-dot"></div> Edge Conn-Servers (:8091, :8092)</div>
+    <div class="pipe-arrow">──►</div>
+    <div class="pipe-node"><div class="pipe-dot"></div> Edge Load Balancer (:8080)</div>
   </div>
 
   <!-- Tenant & Environment Selector Bar -->
@@ -173,32 +175,32 @@
 
     <!-- Right Column: Evaluator & Shard Inspector -->
     <div style="display: flex; flex-direction: column; gap: 20px;">
-      <!-- Evaluator Node State -->
+      <!-- Fleet & Ring State -->
       <div class="card">
         <div class="card-header">
-          <h3>Evaluator & Hash Ring Inspector</h3>
-          <span class="badge badge-on" id="evaluatorStatusBadge">ONLINE (:9001)</span>
+          <h3>Fleet & Hash Ring Inspector</h3>
+          <span class="badge badge-on" id="evaluatorStatusBadge">ONLINE</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">Node ID:</span>
-            <span id="evalNodeID" style="font-family: monospace;">evaluator-1</span>
+            <span style="color: var(--text-muted);">Evaluator Ring (etcd):</span>
+            <span id="evalNodesList" style="font-family: monospace; color: var(--accent);">["evaluator-1", "evaluator-2", "evaluator-3"]</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">etcd Cluster Revision:</span>
-            <span id="evalEtcdRev" style="font-family: monospace;">#0</span>
+            <span style="color: var(--text-muted);">Shard Distribution:</span>
+            <span id="evalOwnedShards" style="font-family: monospace; color: #3fb950;">Calculating...</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">Active Ring Nodes:</span>
-            <span id="evalNodesList" style="font-family: monospace; color: var(--accent);">["evaluator-1"]</span>
+            <span style="color: var(--text-muted);">Fleet Active Sessions:</span>
+            <span id="evalSessionCount" style="font-family: monospace; font-weight: bold;">0</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">Owned Shards:</span>
-            <span id="evalOwnedShards" style="font-family: monospace; color: #3fb950;">Shard 0</span>
+            <span style="color: var(--text-muted);">Edge Conn-Servers:</span>
+            <span id="connServersStatus" style="font-family: monospace; color: #58a6ff;">Slot 1: 0 | Slot 2: 0</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: var(--text-muted);">Tracked Client Sessions:</span>
-            <span id="evalSessionCount" style="font-family: monospace;">0</span>
+            <span style="color: var(--text-muted);">Load Balancer (:8080):</span>
+            <span id="lbStatus" style="font-family: monospace; color: #3fb950;">Healthy</span>
           </div>
         </div>
       </div>
@@ -211,8 +213,9 @@
         </div>
         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
           <select id="simGatewaySelect" style="width: 100%; font-size: 12px; background: #0d1117; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px;">
-            <option value="8091">Edge Connection Server Slot 1 (:8091) [Decoupled SSE]</option>
-            <option value="8092">Edge Connection Server Slot 2 (:8092) [Decoupled SSE]</option>
+            <option value="8080" selected>⚡ Edge Load Balancer (:8080) [Auto-Balanced Fleet]</option>
+            <option value="8091">Edge Connection Server Slot 1 (:8091) [Direct Slot 1]</option>
+            <option value="8092">Edge Connection Server Slot 2 (:8092) [Direct Slot 2]</option>
             <option value="9001">Direct Evaluator Node 1 (:9001)</option>
           </select>
         </div>
@@ -594,38 +597,82 @@
     }
 
     async function pollLiveUpdates() {
-      // 1. Evaluator health & cluster state
-      try {
-        const evalRes = await fetch(`${EVAL_API}/healthz`);
-        if (evalRes.ok) {
-          const evalData = await evalRes.json();
-          document.getElementById("evaluatorStatusBadge").className = "badge badge-on";
-          document.getElementById("evaluatorStatusBadge").textContent = "ONLINE (:9001)";
-          document.getElementById("evalNodeID").textContent = evalData.node_id || "-";
-          document.getElementById("evalEtcdRev").textContent = `#${evalData.etcd_revision || 0}`;
-          document.getElementById("evalNodesList").textContent = JSON.stringify(evalData.cluster_nodes || []);
-          document.getElementById("evalSessionCount").textContent = evalData.total_sessions || 0;
+      // 1. Evaluator Fleet & Cluster Ring state
+      let totalEvaluatorSessions = 0;
+      let clusterNodes = [];
+      let shardDistribution = [];
 
-          if (selectedEnvId) {
-            try {
-              const shardRes = await fetch(`${EVAL_API}/api/v1/shards/${selectedEnvId}`);
-              if (shardRes.ok) {
-                const shardData = await shardRes.json();
-                document.getElementById("evalOwnedShards").textContent = 
-                  shardData.owned_shards && shardData.owned_shards.length > 0 ? 
-                  `Shards: [${shardData.owned_shards.join(", ")}]` : "None (Rebalanced)";
-              }
-            } catch (e) {}
+      const evalPorts = [9001, 9002, 9003];
+      for (const p of evalPorts) {
+        try {
+          const res = await fetch(`http://${defaultHost}:${p}/healthz`);
+          if (res.ok) {
+            const data = await res.json();
+            totalEvaluatorSessions += (data.total_sessions || 0);
+            if (data.cluster_nodes && data.cluster_nodes.length > 0) {
+              clusterNodes = data.cluster_nodes;
+            }
           }
-        } else {
-          throw new Error(`HTTP ${evalRes.status}`);
-        }
-      } catch (e) {
+          if (selectedEnvId) {
+            const sRes = await fetch(`http://${defaultHost}:${p}/api/v1/shards/${selectedEnvId}`);
+            if (sRes.ok) {
+              const sData = await sRes.json();
+              if (sData.owned_shards && sData.owned_shards.length > 0) {
+                shardDistribution.push(`node-${p%9000}: [${sData.owned_shards.join(",")}]`);
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (clusterNodes.length > 0) {
+        document.getElementById("evaluatorStatusBadge").className = "badge badge-on";
+        document.getElementById("evaluatorStatusBadge").textContent = `ONLINE (${clusterNodes.length} NODES)`;
+        document.getElementById("evalNodesList").textContent = JSON.stringify(clusterNodes);
+        document.getElementById("evalSessionCount").textContent = totalEvaluatorSessions;
+        document.getElementById("evalOwnedShards").textContent = shardDistribution.length > 0 ? shardDistribution.join(" | ") : "Rebalancing...";
+      } else {
         document.getElementById("evaluatorStatusBadge").className = "badge badge-off";
         document.getElementById("evaluatorStatusBadge").textContent = "OFFLINE";
       }
 
-      // 2. Outbox CDC events stream
+      // 2. Edge Connection Servers & Load Balancer health
+      let connServerStats = [];
+      for (const [slot, port] of [[1, 8091], [2, 8092]]) {
+        try {
+          const cRes = await fetch(`http://${defaultHost}:${port}/healthz`);
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            connServerStats.push(`Slot ${slot}: ${cData.active_connections || 0} active`);
+          } else {
+            connServerStats.push(`Slot ${slot}: err`);
+          }
+        } catch (e) {
+          connServerStats.push(`Slot ${slot}: off`);
+        }
+      }
+      if (document.getElementById("connServersStatus")) {
+        document.getElementById("connServersStatus").textContent = connServerStats.join(" | ");
+      }
+
+      // 3. Load Balancer health
+      try {
+        const lbRes = await fetch(`http://${defaultHost}:8080/healthz`);
+        if (lbRes.ok) {
+          const lbData = await lbRes.json();
+          if (document.getElementById("lbStatus")) {
+            document.getElementById("lbStatus").textContent = `Healthy (${lbData.upstreams_count} backends)`;
+            document.getElementById("lbStatus").style.color = "#3fb950";
+          }
+        }
+      } catch (e) {
+        if (document.getElementById("lbStatus")) {
+          document.getElementById("lbStatus").textContent = "Unreachable";
+          document.getElementById("lbStatus").style.color = "#da3633";
+        }
+      }
+
+      // 4. Outbox CDC events stream
       try {
         const outRes = await fetch(`${MGMT_API}/api/v1/outbox`);
         if (outRes.ok) {
@@ -687,9 +734,12 @@
         const duration = (performance.now() - start).toFixed(2);
         
         document.getElementById("simResults").innerHTML = `
-          <div style="color: #3fb950; margin-bottom: 6px;">✓ Evaluated in <strong>${duration} ms</strong> (In-Memory Engine)</div>
+          <div style="color: #3fb950; margin-bottom: 4px;">✓ Evaluated in <strong>${duration} ms</strong> (Direct Evaluator Engine)</div>
           <div style="color: var(--text-muted); margin-bottom: 6px;">Shard: <strong>${data.shard_id}</strong> | Env Version: <strong>v${data.environment_version}</strong></div>
-          <pre style="color: #f0f6fc; margin: 0;">${JSON.stringify(data.flags, null, 2)}</pre>
+          <div style="color: #d29922; font-size: 11px; margin-bottom: 6px; background: rgba(210, 153, 34, 0.1); border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 4px; padding: 4px 8px;">
+            ⚡ <strong>Point-in-time calculation.</strong> To stream live changes in real-time as flags flip, click <strong>"Stream Connect"</strong>!
+          </div>
+          <pre style="color: #f0f6fc; margin: 0; background: #070a0e; padding: 8px; border-radius: 4px;">${JSON.stringify(data.flags, null, 2)}</pre>
         `;
       } catch (err) {
         document.getElementById("simResults").innerHTML = `<span style="color: #f85149;">Evaluation Error: ${err.message}</span>`;
@@ -699,16 +749,21 @@
     let activeEventSource = null;
     let streamFlags = {};
 
+    function resetStreamButton() {
+      const btn = document.getElementById("btnStream");
+      btn.textContent = "Stream Connect";
+      btn.style.borderColor = "var(--border)";
+      btn.style.color = "var(--text)";
+      btn.style.background = "var(--card-bg)";
+    }
+
     function toggleStreamSession() {
       if (activeEventSource) {
         activeEventSource.close();
         activeEventSource = null;
-        const btn = document.getElementById("btnStream");
-        btn.textContent = "Stream Connect";
-        btn.style.borderColor = "var(--border)";
-        btn.style.color = "var(--text)";
+        resetStreamButton();
         showToast("Stream disconnected", "info");
-        document.getElementById("simResults").innerHTML = `Stream disconnected. Click "Stream Connect" or "Evaluate".`;
+        document.getElementById("simResults").innerHTML = `Stream disconnected. Click "Stream Connect" to reconnect.`;
         pollLiveUpdates();
         return;
       }
@@ -720,14 +775,14 @@
 
       const userID = document.getElementById("simUserID").value.trim() || "usr_alice";
       const connID = "conn_" + Math.random().toString(36).substring(2, 9);
-      const gatewayPort = document.getElementById("simGatewaySelect") ? document.getElementById("simGatewaySelect").value : "8091";
-      const isConnServer = gatewayPort === "8091" || gatewayPort === "8092";
+      const gatewayPort = document.getElementById("simGatewaySelect") ? document.getElementById("simGatewaySelect").value : "8080";
+      const isDirectEval = gatewayPort === "9001";
       const streamBase = `http://${defaultHost}:${gatewayPort}`;
-      const streamPath = isConnServer ? "/api/v1/stream" : "/api/v1/sessions/stream";
+      const streamPath = isDirectEval ? "/api/v1/sessions/stream" : "/api/v1/stream";
       const url = `${streamBase}${streamPath}?user_id=${encodeURIComponent(userID)}&env_id=${encodeURIComponent(selectedEnvId)}&conn_id=${encodeURIComponent(connID)}`;
 
       showToast(`Connecting live SSE via :${gatewayPort} for ${userID}...`, "info");
-      document.getElementById("simResults").innerHTML = `<div style="color: var(--accent);">Connecting to real-time SSE stream...</div>`;
+      document.getElementById("simResults").innerHTML = `<div style="color: var(--accent);">Connecting to real-time SSE stream at ${url}...</div>`;
 
       activeEventSource = new EventSource(url);
 
@@ -738,8 +793,9 @@
         btn.textContent = "Disconnect Stream";
         btn.style.borderColor = "#238636";
         btn.style.color = "#3fb950";
+        btn.style.background = "rgba(35, 134, 54, 0.2)";
         showToast(`✓ Live SSE Connected: ${data.connection_id} (Shard ${data.shard_id})`, "success");
-        renderStreamView(data, "Initial Snapshot (PUT)");
+        renderStreamView(data, "Initial Snapshot (PUT)", gatewayPort);
         pollLiveUpdates();
       });
 
@@ -755,7 +811,10 @@
             shard_id: document.getElementById("streamShard") ? document.getElementById("streamShard").textContent : "0",
             environment_version: patch.environment_version,
             flags: streamFlags
-          }, `Live CDC Diff Push (PATCH v${patch.environment_version})`);
+          }, `Live CDC Diff Push (PATCH v${patch.environment_version})`, gatewayPort);
+
+          // Auto-sync the Feature Flags table on the left so it stays in sync with real-time pushes!
+          loadFlags();
           pollLiveUpdates();
         } catch (err) {
           console.error("Error processing patch frame:", err);
@@ -763,24 +822,28 @@
       });
 
       activeEventSource.onerror = (err) => {
-        console.warn("SSE stream state:", activeEventSource ? activeEventSource.readyState : "null");
+        console.warn("SSE stream error/state:", activeEventSource ? activeEventSource.readyState : "null", err);
         if (activeEventSource && activeEventSource.readyState === EventSource.CLOSED) {
           activeEventSource.close();
           activeEventSource = null;
-          const btn = document.getElementById("btnStream");
-          btn.textContent = "Stream Connect";
-          btn.style.borderColor = "var(--border)";
-          btn.style.color = "var(--text)";
-          showToast("SSE connection closed", "info");
+          resetStreamButton();
+          showToast(`SSE connection closed on :${gatewayPort}. Check port reachability or CORS.`, "error");
+          document.getElementById("simResults").innerHTML = `
+            <div style="color: #f85149; margin-bottom: 6px;">❌ SSE Connection Closed on port :${gatewayPort}</div>
+            <div style="color: var(--text-muted); font-size: 11px;">Could not maintain persistent connection to ${url}. Ensure port ${gatewayPort} is accessible.</div>
+          `;
           pollLiveUpdates();
         }
       };
     }
 
-    function renderStreamView(data, eventTypeLabel) {
+    function renderStreamView(data, eventTypeLabel, gatewayPort = "8080") {
       document.getElementById("simResults").innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="color: #3fb950; font-weight: bold;">🟢 LIVE SSE STREAM ACTIVE</span>
+          <span style="color: #3fb950; font-weight: bold; display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; box-shadow: 0 0 6px #3fb950;"></span>
+            LIVE SSE STREAM ACTIVE (: ${gatewayPort})
+          </span>
           <span class="badge badge-purple">${eventTypeLabel}</span>
         </div>
         <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 6px;">
