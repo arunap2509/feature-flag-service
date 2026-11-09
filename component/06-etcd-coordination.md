@@ -4,27 +4,27 @@
 
 **etcd** is the distributed consensus backbone of the system. Built on the **Raft consensus algorithm**, etcd provides a strongly consistent, linearizable hierarchical key-value store used for:
 1. **Dynamic Service Discovery**: Tracking live Evaluators and Connection Servers.
-2. **Ephemeral Lease Heartbeating**: Detecting crashed instances in $< 3\text{ seconds}$ without health-check polling loops.
+2. **Ephemeral Lease Heartbeating**: Detecting crashed instances in < 3 seconds without health-check polling loops.
 3. **Event-Driven Topology Watches**: Instantly notifying surviving fleet members when topology changes, triggering automatic shard rebalancing.
 
 ```mermaid
 flowchart TD
-    subgraph etcd Raft Cluster (ff-etcd:2379)
+    subgraph etcd_cluster ["etcd Raft Cluster (ff-etcd:2379)"]
         LeaseEngine["3-Second TTL Lease Manager"]
         KeyStore["Key Store (/members/...)"]
         WatchHub["Event Watch Hub (gRPC Streams)"]
     end
 
-    subgraph Evaluator Fleet
+    subgraph eval_fleet ["Evaluator Fleet"]
         Eval1["Evaluator 1"] -->|KeepAlive Heartbeat| LeaseEngine
         Eval2["Evaluator 2"] -->|KeepAlive Heartbeat| LeaseEngine
         WatchHub -->|Push Membership Changes| Eval1
         WatchHub -->|Push Membership Changes| Eval2
     end
 
-    subgraph Edge Tier
+    subgraph edge_tier ["Edge Tier"]
         Conn1["Conn-Server Slot 1"] -->|Register Slot Lease| KeyStore
-        LB["Load Balancer"] -->|Watch /members/conn-servers/| WatchHub
+        LB["Load Balancer"] -->|"Watch /members/conn-servers/"| WatchHub
     end
 ```
 
@@ -35,7 +35,7 @@ flowchart TD
 | Requirement | etcd (Raft) | Redis Sentinel / Cluster | ZooKeeper (Zab) |
 | :--- | :--- | :--- | :--- |
 | **Consistency Model** | **Linearizable (Strict Raft Quorum)** | Eventual (Async replica drops on failover) | Sequential Consistency |
-| **Split-Brain Immunity** | Complete; requires $(N/2 + 1)$ majority | Vulnerable during master-failover network splits | Complete |
+| **Split-Brain Immunity** | Complete; requires (N/2 + 1) majority | Vulnerable during master-failover network splits | Complete |
 | **Streaming Watch Mechanism** | Multiplexed gRPC event streams | Redis Pub/Sub (Fire-and-forget; lossy) | Watcher one-shot triggers (must re-arm) |
 | **Language & Ecosystem** | Native Go client library (`go.etcd.io/etcd`) | Redis Go drivers | Heavy JVM/JNI footprint |
 

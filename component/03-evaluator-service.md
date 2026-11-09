@@ -5,33 +5,33 @@
 The **Evaluator Service** ([`cmd/evaluator/main.go`](file:///Users/arunap/Project/Lab/feature-flag-service/cmd/evaluator/main.go)) is the computational brain of the platform. It operates completely disconnected from the public internet behind edge Connection Servers.
 
 Its primary missions:
-1. **Sub-Microsecond Flag Checks**: Evaluate targeting rules in local memory in $< 1\mu\text{s}$ without database access.
+1. **Sub-Microsecond Flag Checks**: Evaluate targeting rules in local memory in < 1µs without database access.
 2. **Session Context Management**: Maintain active client contexts in memory partitioned across a consistent hash ring.
 3. **Real-Time Delta Generation**: When a flag state changes, compute exact differences (`DiffPatch`) and dispatch them to Connection Servers via Kafka.
 4. **Zero-Reconnect Failover**: If an evaluator crashes, surviving evaluators adopt its shards and recover contexts from Redis without dropping client sockets.
 
 ```mermaid
 flowchart TD
-    subgraph In-Memory Evaluator State
+    subgraph mem_state ["In-Memory Evaluator State"]
         Cache["cache.Store (Rules & Segments)"]
         Ring["ring.Ring (100 Virtual Nodes)"]
-        Registry["session.Registry (env -> shard -> conn)"]
+        Registry["session.Registry (env, shard, conn)"]
     end
 
-    subgraph Inputs
+    subgraph inputs ["Inputs"]
         KafkaCtrl["Kafka: flag-changes (Broadcast)"] -->|ApplyEvent| Cache
         ConnRPC["Edge ConnServer (Register RPC)"] -->|User Context| Registry
     end
 
-    subgraph Evaluation
+    subgraph eval_core ["Evaluation Core"]
         Cache -->|ParsedFlag & ParsedSegment| Engine["engine.EvaluateFlag (< 1µs)"]
         Registry -->|User Context| Engine
         Engine -->|Diff Detection| Diff["Generate DiffPatch"]
     end
 
-    subgraph Outputs
+    subgraph outputs ["Outputs"]
         Diff -->|Batch by slot_id| KafkaDeliv["Kafka: deliveries (Data Plane)"]
-        Registry -.->|Async Backup| Redis[(Redis Context Store)]
+        Registry -.->|Async Backup| Redis[("Redis Context Store")]
     end
 ```
 
@@ -124,7 +124,7 @@ For owned shards, the evaluator iterates over connected sessions and tests only 
 
 ## 5. Slot Mailbox Dispatch via Kafka
 
-To avoid creating an $M \times N$ mesh of TCP connections between 20 Evaluators and 250 Connection Servers, the evaluator groups patches by `ServerSlot` (the slot ID of the target Connection Server, e.g., 1..8):
+To avoid creating an M × N mesh of TCP connections between 20 Evaluators and 250 Connection Servers, the evaluator groups patches by `ServerSlot` (the slot ID of the target Connection Server, e.g., 1..8):
 
 ```go
 // Map slotID to 0-indexed partition (slot 1 -> partition 0)
@@ -146,21 +146,21 @@ The Connection Server for Slot 1 consumes only Partition 0, pulling exactly the 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Node1 as Evaluator 1 (Crashes)
-    participant etcd as etcd Cluster
-    participant Node2 as Evaluator 2 (Surviving)
-    participant Redis as Redis Context Store
-    participant Conn as Connection Server (Holds Socket)
+    participant Node1 as "Evaluator 1 (Crashes)"
+    participant etcd as "etcd Cluster"
+    participant Node2 as "Evaluator 2 (Surviving)"
+    participant Redis as "Redis Context Store"
+    participant Conn as "Connection Server (Holds Socket)"
 
     Note over Node1: Node 1 experiences hardware fault
-    etcd->>etcd: 3s lease expires; delete /members/evaluators/evaluator-1
+    etcd->>etcd: 3s lease expires - delete /members/evaluators/evaluator-1
     etcd-->>Node2: Watch Event: Member evaluator-1 deleted
-    Node2->>Node2: Ring recalculation: Node 2 adopts Shards [3, 7]
+    Node2->>Node2: Ring recalculation: Node 2 adopts Shards 3, 7
     Node2->>Redis: HGETALL shard:prod:3
     Redis-->>Node2: Recovered 5,000 ClientSession objects
     Node2->>Node2: Run EvaluateAll on recovered contexts
     Node2->>Node2: Register sessions into local session.Registry
-    Note over Conn,Node2: Zero client reconnects! Next patch routes via Node 2.
+    Note over Conn,Node2: Zero client reconnects - Next patch routes via Node 2
 ```
 
 1. Each evaluator maintains a 3-second TTL lease in etcd ([`cluster.Coordinator`](file:///Users/arunap/Project/Lab/feature-flag-service/internal/evaluator/cluster/cluster.go#L18)).

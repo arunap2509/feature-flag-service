@@ -9,10 +9,10 @@ Unlike the data plane (which handles millions of requests per second), the Manag
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin as Engineer / Dashboard
-    participant API as Management API
-    participant DB as PostgreSQL (Single Atomic TX)
-    participant Outbox as outbox table
+    actor Admin as "Engineer / Dashboard"
+    participant API as "Management API"
+    participant DB as "PostgreSQL (Single Atomic TX)"
+    participant Outbox as "outbox table"
     
     Admin->>API: PUT /flags/checkout_v2 (If-Match: "7")
     API->>DB: BEGIN TRANSACTION
@@ -105,6 +105,6 @@ Every state change appends a complete snapshot to the `history` table.
 1. **Database Lock Contention on Environments Table**:
    - Every flag change bumps `environment_version` on the `environments` table.
    - Under heavy write traffic to the same environment, the row in `environments` becomes a serialization point.
-   - *Mitigation*: Flag authoring write rate is low (~17 writes/sec); PostgreSQL row-level locks hold for $< 2\text{ms}$.
+   - *Mitigation*: Flag authoring write rate is low (~17 writes/sec); PostgreSQL row-level locks hold for < 2ms.
 2. **Crash Before Outbox Relay**:
    - If the Management API crashes immediately after transaction commit, the data is completely safe in PostgreSQL's WAL and `outbox` table. The Outbox CDC publisher will pick it up automatically.

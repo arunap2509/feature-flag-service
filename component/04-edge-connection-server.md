@@ -11,23 +11,23 @@ It is intentionally designed to be **stateless with respect to business rules**:
 
 ```mermaid
 flowchart TD
-    subgraph Edge Clients
-        C1[Client Device 1] -->|GET /stream| Conn[Connection Server Slot 1]
-        C2[Client Device 2] -->|GET /stream| Conn
+    subgraph edge_clients ["Edge Clients"]
+        C1["Client Device 1"] -->|"GET /stream"| Conn["Connection Server Slot 1"]
+        C2["Client Device 2"] -->|"GET /stream"| Conn
     end
 
-    subgraph Internal RPC & Hash Ring
-        Conn -->|Resolve Shard Owner| Ring[Hash Ring via etcd]
-        Conn -->|POST /sessions/register| Eval[Evaluator Cluster]
-        Eval -->>|Return initial answers| Conn
-        Conn -->>|event: put| C1
+    subgraph internal_rpc ["Internal RPC & Hash Ring"]
+        Conn -->|Resolve Shard Owner| Ring["Hash Ring via etcd"]
+        Conn -->|"POST /sessions/register"| Eval["Evaluator Cluster"]
+        Eval -->|Return initial answers| Conn
+        Conn -->|"event: put"| C1
     end
 
-    subgraph Slot Mailbox Kafka Consumer
+    subgraph mailbox_consumer ["Slot Mailbox Kafka Consumer"]
         Eval -->|Produce to Deliveries| KDeliv["Kafka: deliveries (Partition 0)"]
-        KDeliv -->|Consume Partition 0| DelivCons[Deliveries Consumer]
-        DelivCons -->|Lookup connection_id| Reg[Local Connection Registry]
-        Reg -->|event: patch| C1
+        KDeliv -->|Consume Partition 0| DelivCons["Deliveries Consumer"]
+        DelivCons -->|Lookup connection_id| Reg["Local Connection Registry"]
+        Reg -->|"event: patch"| C1
     end
 ```
 

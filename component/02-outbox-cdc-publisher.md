@@ -8,19 +8,19 @@ Instead of running recurring polling queries (`SELECT * FROM outbox WHERE proces
 
 ```mermaid
 flowchart LR
-    subgraph PostgreSQL Primary
-        TX[Management API Commit] -->|Write to WAL| WAL[(WAL Engine)]
-        WAL -->|Logical Decoding pgoutput| Slot[Replication Slot: outbox_cdc_slot]
+    subgraph pg_primary ["PostgreSQL Primary"]
+        TX["Management API Commit"] -->|Write to WAL| WAL[("WAL Engine")]
+        WAL -->|Logical Decoding pgoutput| Slot["Replication Slot: outbox_cdc_slot"]
     end
 
-    subgraph Outbox CDC Publisher (Pure Go)
-        Slot -->|Raw WAL Stream pglogrepl| Parser[Tuple Parser]
-        Parser -->|Commit LSN Update| FlushTracker[confirmed_flush_lsn Tracker]
+    subgraph outbox_cdc ["Outbox CDC Publisher (Pure Go)"]
+        Slot -->|Raw WAL Stream pglogrepl| Parser["Tuple Parser"]
+        Parser -->|Commit LSN Update| FlushTracker["confirmed_flush_lsn Tracker"]
         FlushTracker -->|StandbyStatusUpdate| Slot
     end
 
-    subgraph Kafka Control Plane
-        Parser -->|Produce Record Key: env_id| Topic["Kafka: flag-changes"]
+    subgraph kafka_ctrl ["Kafka Control Plane"]
+        Parser -->|"Produce Record (Key: env_id)"| Topic["Kafka: flag-changes"]
     end
 ```
 

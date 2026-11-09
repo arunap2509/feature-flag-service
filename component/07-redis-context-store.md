@@ -11,23 +11,23 @@ By maintaining a durable, fast-delete index of active user contexts in Redis, su
 
 ```mermaid
 flowchart TD
-    subgraph Edge Connection
-        Client([Mobile App]) -->|Persistent SSE| Conn[Edge Connection Server]
-        Conn -->|POST /sessions/register| Eval1[Evaluator 1]
+    subgraph edge_conn ["Edge Connection"]
+        Client(["Mobile App"]) -->|"Persistent SSE"| Conn["Edge Connection Server"]
+        Conn -->|"POST /sessions/register"| Eval1["Evaluator 1"]
     end
 
-    subgraph Redis Context Store (shard:prod:17)
-        Eval1 -->|1. HSET conn_42 ClientSession JSON| Redis[(Redis Hash)]
-        Eval1 -->>|2. Success| Conn
+    subgraph redis_store ["Redis Context Store (shard:prod:17)"]
+        Eval1 -->|"1. HSET conn_42 ClientSession JSON"| Redis[("Redis Hash")]
+        Eval1 -->|"2. Success"| Conn
     end
 
-    subgraph Crash & Zero-Reconnect Failover
-        Eval1 -.->|Crash / Die| Dead([Dead])
-        etcd[(etcd)] -->|Watch: Member Deleted| Eval2[Evaluator 2]
-        Eval2 -->|3. Adopt Shard 17: HGETALL shard:prod:17| Redis
-        Redis -->>|4. Return all ClientSession objects| Eval2
-        Eval2 -->|5. Resume ReevaluateShard| Eval2
-        Eval2 -->|6. Emit DiffPatches to Kafka Deliveries| Conn
+    subgraph failover_recovery ["Crash & Zero-Reconnect Failover"]
+        Eval1 -.->|Crash / Die| Dead(["Dead"])
+        etcd[("etcd")] -->|"Watch: Member Deleted"| Eval2["Evaluator 2"]
+        Eval2 -->|"3. Adopt Shard 17: HGETALL shard:prod:17"| Redis
+        Redis -->|"4. Return all ClientSession objects"| Eval2
+        Eval2 -->|"5. Resume ReevaluateShard"| Eval2
+        Eval2 -->|"6. Emit DiffPatches to Kafka Deliveries"| Conn
     end
 ```
 
@@ -45,7 +45,7 @@ If an evaluator node holding 250,000 active sessions crashes:
 5. Databases lock up, CPU spikes to 100%, and an outage cascades across the entire platform.
 
 **With the Redis Context Store**:
-Edge connection servers **never drop their client streams**. The surviving evaluator transparently adopts the orphaned sessions from Redis in $< 500\text{ms}$.
+Edge connection servers **never drop their client streams**. The surviving evaluator transparently adopts the orphaned sessions from Redis in < 500ms.
 
 ---
 
@@ -110,7 +110,7 @@ func (s *Store) DeleteSession(ctx context.Context, envID string, shardID int, co
     return s.client.HDel(ctx, key, connID).Err()
 }
 ```
-Because `HDEL` operates on an existing hash key in $O(1)$, disconnect cleanup is instantaneous and does not leave orphaned records.
+Because `HDEL` operates on an existing hash key in O(1), disconnect cleanup is instantaneous and does not leave orphaned records.
 
 ### C. Bulk Shard Recovery During Failover
 When an evaluator's [`onRingChange`](file:///Users/arunap/Project/Lab/feature-flag-service/cmd/evaluator/main.go#L148) callback detects that it has adopted Shard 17:
@@ -140,7 +140,7 @@ The adopting node iterates the returned slice, re-runs [`engine.EvaluateAll`](fi
 
 1. **Memory Sizing**:
    - Each active session JSON takes ~250–500 bytes.
-   - 200,000 active sessions in Redis occupy only $\approx 100\text{ MB}$ of RAM.
+   - 200,000 active sessions in Redis occupy only ~100 MB of RAM.
 2. **Pipelining & Bulk Deletes**:
    - If an entire environment is deleted, Redis can execute `DEL shard:env_id:*` in one command.
 3. **Redis Persistence Settings**:

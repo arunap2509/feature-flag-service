@@ -71,7 +71,7 @@ The service includes a real-time cluster observability and chaos engineering das
 
 - **Live URL**: `http://localhost:9090`
 - **Real-Time etcd Ring Topology**: Shows active virtual node members and upstream connection slots.
-- **Dynamic Kubernetes HPA Gauges**: Tracks live CPU utilization against the $50\%$ autoscaling threshold.
+- **Dynamic Kubernetes HPA Gauges**: Tracks live CPU utilization against the 50% autoscaling threshold.
 - **Real-Time Pod Resource Consumption**: Shows actual CPU millicores (`m`) and memory (`MiB`) per pod.
 - **One-Click Chaos Triggers**: Instantly kill pods (`evaluator-0`, `conn-server-0`, `load-balancer`) to visually observe automated failover and ring rebalancing.
 
@@ -119,11 +119,11 @@ go run cmd/fleet-watch-ui/main.go -port=9090
 go run cmd/verify-e2e/main.go -gateway=http://localhost:18080 -mgmt=http://localhost:18081
 ```
 Verifies all 5 core invariants:
-- **Test 1**: Closed-Loop SSE Propagation & Content Integrity ($< 35\text{ms}$).
-- **Test 2**: Emergency Kill-Switch Fast Path SLA ($< 30\text{ms}$).
+- **Test 1**: Closed-Loop SSE Propagation & Content Integrity (< 35ms).
+- **Test 2**: Emergency Kill-Switch Fast Path SLA (< 30ms).
 - **Test 3**: Segment Targeting Isolation (zero leaks to non-targeted users).
 - **Test 4**: Optimistic Concurrency Control (OCC 412 race collision handling).
-- **Test 5**: Server SDK In-Memory AST Benchmark ($< 1\mu\text{s}$ SLA).
+- **Test 5**: Server SDK In-Memory AST Benchmark (< 1µs SLA).
 
 ### 2. High-Throughput Traffic Generators
 ```bash

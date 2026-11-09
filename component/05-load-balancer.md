@@ -11,14 +11,14 @@ Its core duties:
 
 ```mermaid
 flowchart LR
-    Client1([Mobile Client]) -->|GET /stream| LB[Load Balancer :8080]
-    Client2([Web Browser]) -->|GET /stream| LB
+    Client1(["Mobile Client"]) -->|"GET /stream"| LB["Load Balancer (:8080)"]
+    Client2(["Web Browser"]) -->|"GET /stream"| LB
     
-    etcd[(etcd Cluster)] -->|Watch /members/conn-servers/| LB
+    etcd[("etcd Cluster")] -->|"Watch /members/conn-servers/"| LB
     
-    LB -->|Atomic Round-Robin| CS1[Conn-Server Slot 1 :8091]
-    LB -->|Atomic Round-Robin| CS2[Conn-Server Slot 2 :8092]
-    LB -->|Atomic Round-Robin| CS3[Conn-Server Slot 3 :8093]
+    LB -->|Atomic Round-Robin| CS1["Conn-Server Slot 1 (:8091)"]
+    LB -->|Atomic Round-Robin| CS2["Conn-Server Slot 2 (:8092)"]
+    LB -->|Atomic Round-Robin| CS3["Conn-Server Slot 3 (:8093)"]
 ```
 
 ---
@@ -53,7 +53,7 @@ for wresp := range rch {
     p.refresh(ctx)
 }
 ```
-If a connection server crashes, its 3-second etcd lease expires. The load balancer receives a `DELETE` watch event and removes that node from its target list in $< 3\text{ seconds}$.
+If a connection server crashes, its 3-second etcd lease expires. The load balancer receives a `DELETE` watch event and removes that node from its target list in < 3 seconds.
 
 ### B. Lock-Free Atomic Round-Robin
 Request dispatching uses lock-free atomic counters for peak throughput:
