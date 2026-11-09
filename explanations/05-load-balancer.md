@@ -5,7 +5,7 @@
 The **Load Balancer** ([`cmd/load-balancer/main.go`](file:///Users/arunap/Project/Lab/feature-flag-service/cmd/load-balancer/main.go)) is the public entry point (:8080) for all incoming client traffic. It acts as an intelligent Layer 7 reverse proxy.
 
 Its core duties:
-1. **Dynamic Upstream Discovery**: Discovers live, healthy [Edge Connection Servers](file:///Users/arunap/Project/Lab/feature-flag-service/component/04-edge-connection-server.md) dynamically by watching etcd (`/members/conn-servers/`).
+1. **Dynamic Upstream Discovery**: Discovers live, healthy [Edge Connection Servers](file:///Users/arunap/Project/Lab/feature-flag-service/explanations/04-edge-connection-server.md) dynamically by watching etcd (`/members/conn-servers/`).
 2. **Zero-Configuration Scalability**: When new connection servers start or die, the pool automatically adjusts in real time without reloading configuration files or restarting the load balancer.
 3. **Immediate SSE Streaming**: Configures Go's reverse proxy with immediate flushing (`FlushInterval: -1`), ensuring real-time delta updates are never delayed by internal I/O buffers.
 
